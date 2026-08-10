@@ -31,4 +31,4 @@ jobs:
       - name: Verify binary is static
         run: |
           file bin/forgetmenot
-          ! ldd bin/forgetmenot 2>&1 | grep -q "dynamic"
+          file bin/forgetmenot | grep -q "statically linked"
