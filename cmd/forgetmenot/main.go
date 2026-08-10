@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -18,6 +19,15 @@ import (
 )
 
 func main() {
+	// Subcommands: export, import, stats, list, eval. Everything else is the
+	// MCP server (serve is the default).
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "export", "import", "stats", "list", "eval":
+			os.Exit(runCLI(os.Args[1:]))
+		}
+	}
+
 	var (
 		dbPath      = flag.String("db", defaultDBPath(), "path to the SQLite memory database")
 		embedKind   = flag.String("embed", "ollama", "embedding provider: ollama | openai")
@@ -39,14 +49,9 @@ func main() {
 	}
 	defer store.Close()
 
-	var em memory.Embedder
-	switch *embedKind {
-	case "ollama":
-		em = embed.NewOllama(*embedURL, *embedModel)
-	case "openai":
-		em = embed.NewOpenAICompat(*embedURL, *embedAPIKey, *embedModel)
-	default:
-		log.Fatalf("unknown embed provider %q (want ollama or openai)", *embedKind)
+	em, err := buildEmbedder(*embedKind, *embedURL, *embedModel, *embedAPIKey)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	svc := memory.NewService(store, em)
@@ -56,6 +61,18 @@ func main() {
 
 	if err := mcpserver.Run(ctx, svc, mcpserver.Options{Name: "forgetmenot", Version: "v0.1.0"}); err != nil {
 		log.Fatalf("mcp server: %v", err)
+	}
+}
+
+// buildEmbedder constructs the embedding provider from CLI flags.
+func buildEmbedder(kind, url, model, apiKey string) (memory.Embedder, error) {
+	switch kind {
+	case "ollama":
+		return embed.NewOllama(url, model), nil
+	case "openai":
+		return embed.NewOpenAICompat(url, apiKey, model), nil
+	default:
+		return nil, fmt.Errorf("unknown embed provider %q (want ollama or openai)", kind)
 	}
 }
 

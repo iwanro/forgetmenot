@@ -29,15 +29,20 @@ type Service struct {
 	DedupeThreshold float64
 	// MinRecallScore: recall results below this similarity are dropped.
 	MinRecallScore float64
+	// ConflictThreshold: a new memory whose similarity to an existing one of
+	// the same type/project falls in [ConflictThreshold, DedupeThreshold) is
+	// treated as a possible contradiction and opens a conflict. PRD §7.3.
+	ConflictThreshold float64
 }
 
 // NewService returns a Service with sensible defaults.
 func NewService(store Store, emb Embedder) *Service {
 	return &Service{
-		Store:           store,
-		Embedder:        emb,
-		DedupeThreshold: 0.92,
-		MinRecallScore:  0.30,
+		Store:             store,
+		Embedder:          emb,
+		DedupeThreshold:   0.92,
+		MinRecallScore:    0.30,
+		ConflictThreshold: 0.60,
 	}
 }
 
@@ -65,6 +70,9 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 	if in.Content == "" {
 		return "", false, fmt.Errorf("content is required")
 	}
+	if in.Importance < 0 || in.Importance > 1 {
+		return "", false, fmt.Errorf("importance must be in [0,1], got %v", in.Importance)
+	}
 	vec, err := s.embedOne(ctx, in.Content)
 	if err != nil {
 		return "", false, fmt.Errorf("embed content: %w", err)
@@ -88,6 +96,19 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 		}
 	}
 
+	// Conflict detection: similar but not identical content in the same
+	// project/type may contradict the existing memory. Done AFTER insert so
+	// the foreign keys resolve. PRD §7.3, §10.2.
+	conflictIDs := []string{}
+	for i, m := range existing {
+		if m.Type != in.Type {
+			continue
+		}
+		if sim := Cosine(vec, embs[i]); sim >= s.ConflictThreshold {
+			conflictIDs = append(conflictIDs, m.ID)
+		}
+	}
+
 	m := &Memory{
 		ID:             NewID(),
 		Type:           in.Type,
@@ -101,7 +122,7 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 		Source:         in.Source,
 		Metadata:       in.Metadata,
 	}
-	if m.Importance <= 0 {
+	if m.Importance == 0 {
 		m.Importance = 0.5
 	}
 	if m.Metadata == nil {
@@ -109,6 +130,9 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 	}
 	if err := s.Store.Insert(ctx, m, vec); err != nil {
 		return "", false, err
+	}
+	for _, other := range conflictIDs {
+		_, _ = s.Store.CreateConflict(ctx, other, m.ID)
 	}
 	return m.ID, true, nil
 }
@@ -140,10 +164,24 @@ func (s *Service) Recall(ctx context.Context, in RecallInput) ([]SearchResult, e
 	if err != nil {
 		return nil, err
 	}
+	// Collect superseded memory IDs to hide them from results (PRD §6.3).
+	superseded := map[string]bool{}
+	for _, m := range mems {
+		ids, err := s.Store.Superseding(ctx, m.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			superseded[id] = true
+		}
+	}
 	results := make([]SearchResult, 0, len(mems))
 	for i, m := range mems {
 		if in.Type != "" && m.Type != in.Type {
 			continue
+		}
+		if superseded[m.ID] {
+			continue // superseded memories are not suggested by default
 		}
 		score := Cosine(qvec, embs[i])
 		if score < s.MinRecallScore {
@@ -168,7 +206,40 @@ func (s *Service) Forget(ctx context.Context, id string) error { return s.Store.
 
 // Update applies a patch to a memory by ID.
 func (s *Service) Update(ctx context.Context, id string, patch UpdatePatch) error {
+	if patch.Type != nil && !ValidTypes[*patch.Type] {
+		return fmt.Errorf("invalid memory type %q", *patch.Type)
+	}
 	return s.Store.Update(ctx, id, patch)
+}
+
+// Link creates a relation between two memories. If a matching relation
+// already exists, it is a no-op.
+func (s *Service) Link(ctx context.Context, fromID, toID, kind string) error {
+	k := RelationKind(kind)
+	switch k {
+	case RelationRelated, RelationSupersedes, RelationPartOf:
+	case "":
+		k = RelationRelated
+	default:
+		return fmt.Errorf("invalid relation kind %q", kind)
+	}
+	return s.Store.AddRelation(ctx, &Relation{FromID: fromID, ToID: toID, Kind: k})
+}
+
+// Relations returns all relations originating from a memory.
+func (s *Service) Relations(ctx context.Context, memoryID string) ([]Relation, error) {
+	return s.Store.RelationsFrom(ctx, memoryID)
+}
+
+// Conflicts lists all open conflicts.
+func (s *Service) Conflicts(ctx context.Context) ([]Conflict, error) {
+	return s.Store.OpenConflicts(ctx)
+}
+
+// ResolveConflict marks a conflict resolved with the given winner, and records
+// the losing memory as superseded by the winner.
+func (s *Service) ResolveConflict(ctx context.Context, conflictID, winnerID string) error {
+	return s.Store.ResolveConflict(ctx, conflictID, winnerID)
 }
 
 // Stats returns simple health metrics for the memory.
@@ -182,7 +253,11 @@ func (s *Service) Stats(ctx context.Context) (Stats, error) {
 	if err != nil {
 		return Stats{}, err
 	}
-	return Stats{Count: total, ProjectCount: total}, nil
+	projects, err := s.Store.CountProjects(ctx)
+	if err != nil {
+		return Stats{}, err
+	}
+	return Stats{Count: total, ProjectCount: projects}, nil
 }
 
 func (s *Service) embedOne(ctx context.Context, text string) ([]float64, error) {

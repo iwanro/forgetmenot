@@ -66,6 +66,48 @@ type SearchResult struct {
 	Score  float64
 }
 
+// RelationKind describes how two memories relate. See PRD §6.3.
+type RelationKind string
+
+const (
+	// RelationRelated is a loose semantic link (same topic, complement).
+	RelationRelated RelationKind = "related"
+	// RelationSupersedes means FromID is replaced by ToID. When recalling,
+	// superseded memories are not suggested by default.
+	RelationSupersedes RelationKind = "supersedes"
+	// RelationPartOf means FromID is a component of ToID (entity -> entity).
+	RelationPartOf RelationKind = "part_of"
+)
+
+// Relation links two memories.
+type Relation struct {
+	ID        string       `json:"id"`
+	FromID    string       `json:"from_id"`
+	ToID      string       `json:"to_id"`
+	Kind      RelationKind `json:"kind"`
+	CreatedAt time.Time    `json:"created_at"`
+}
+
+// ConflictStatus tracks a contradiction between two memories.
+type ConflictStatus string
+
+const (
+	ConflictOpen     ConflictStatus = "open"
+	ConflictResolved ConflictStatus = "resolved"
+)
+
+// Conflict records a contradiction between two memories. The winner is set
+// when the conflict is resolved.
+type Conflict struct {
+	ID         string         `json:"id"`
+	MemoryA    string         `json:"memory_a"`
+	MemoryB    string         `json:"memory_b"`
+	Status     ConflictStatus `json:"status"`
+	Winner     string         `json:"winner,omitempty"`
+	CreatedAt  time.Time      `json:"created_at"`
+	ResolvedAt *time.Time     `json:"resolved_at,omitempty"`
+}
+
 // Store is the persistence contract. The SQLite implementation lives in
 // store.go; tests and future backends implement this interface.
 type Store interface {
@@ -77,5 +119,20 @@ type Store interface {
 	// with its embedding. Used for brute-force semantic search in M0.
 	All(ctx context.Context, project string) ([]*Memory, [][]float64, error)
 	Count(ctx context.Context, project string) (int, error)
+	CountProjects(ctx context.Context) (int, error)
+
+	// Relations.
+	AddRelation(ctx context.Context, r *Relation) error
+	RelationsFrom(ctx context.Context, memoryID string) ([]Relation, error)
+	// Superseding returns the IDs of memories that are superseded by memoryID.
+	Superseding(ctx context.Context, memoryID string) ([]string, error)
+
+	// Conflicts.
+	// CreateConflict records a contradiction. If an open conflict between the
+	// two memories already exists, it returns the existing conflict's ID.
+	CreateConflict(ctx context.Context, a, b string) (string, error)
+	OpenConflicts(ctx context.Context) ([]Conflict, error)
+	ResolveConflict(ctx context.Context, id, winner string) error
+
 	Close() error
 }

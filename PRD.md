@@ -311,12 +311,15 @@ Diferențiatorii noștri, în ordinea importanței:
 - [x] Config pentru Claude Code (`.mcp.json`) + README.
 - [x] Teste unitare + test de integrare MCP end-to-end.
 
-### M1 - Model de date complet (săptămâna 2-3)
-- [ ] Tipuri `decision`, `preference`, `entity`, `context`, `episode`.
-- [ ] `links` + `supersedes`.
-- [ ] `memory.conflicts` + `resolve_conflict`.
-- [ ] CLI `export/import/stats`.
-- [ ] Eval harness mic (20 de interogări).
+### M1 - Model de date complet ✅ (2026-08-10)
+- [x] Tipuri `decision`, `preference`, `entity`, `context`, `episode` (validare în core).
+- [x] `links` + `supersedes` (relații între memorii: related, supersedes, part_of).
+- [x] `memory.conflicts` + `resolve_conflict` (detecție automată la remember + rezolvare cu supersede).
+- [x] CLI `export/import/stats/list` + subcomanda `eval`.
+- [x] Eval harness (20 de interogări, recall@k, idempotent seed).
+- [x] Recall ascunde memoriile superseded.
+- [x] Stats corect: count + project_count distinct.
+- [x] Fix review M0: validare importanță [0,1], validare tip la update, scan NULL resolved_at, importanță/conflict praguri documentate.
 
 ### M2 - Igienă automată (săptămâna 4-6)
 - [ ] Decay pe `episode`/`context` (bazat pe access).

@@ -34,12 +34,15 @@ func Run(ctx context.Context, svc *memory.Service, opts Options) error {
 	server := mcp.NewServer(&mcp.Implementation{Name: opts.Name, Version: opts.Version}, nil)
 
 	addRememberTool(server, svc, opts)
-	addRecallTool(server, svc, opts)
+	addRecallTool(server, svc)
 	addForgetTool(server, svc)
 	addUpdateTool(server, svc)
+	addLinkTool(server, svc)
+	addConflictsTool(server, svc)
+	addResolveConflictTool(server, svc)
 	addStatsTool(server, svc)
 
-	log.Printf("%s %s: %d memory tools registered", opts.Name, opts.Version, 5)
+	log.Printf("%s %s: %d memory tools registered", opts.Name, opts.Version, 8)
 	return server.Run(ctx, &mcp.StdioTransport{})
 }
 
@@ -55,11 +58,10 @@ type rememberIn struct {
 }
 
 type rememberOut struct {
-	ID           string `json:"id"`
-	Type         string `json:"type"`
-	Project      string `json:"project"`
-	IsNew        bool   `json:"is_new"`
-	ReinforcedID string `json:"reinforced_id,omitempty"`
+	ID      string `json:"id"`
+	Type    string `json:"type"`
+	Project string `json:"project"`
+	IsNew   bool   `json:"is_new"`
 }
 
 func addRememberTool(server *mcp.Server, svc *memory.Service, opts Options) {
@@ -84,12 +86,7 @@ func addRememberTool(server *mcp.Server, svc *memory.Service, opts Options) {
 		if err != nil {
 			return nil, rememberOut{}, err
 		}
-		out := rememberOut{ID: id, Type: typ, Project: in.Project, IsNew: isNew}
-		if !isNew {
-			out.ReinforcedID = id
-			return &mcp.CallToolResult{}, out, nil
-		}
-		return nil, out, nil
+		return nil, rememberOut{ID: id, Type: typ, Project: in.Project, IsNew: isNew}, nil
 	})
 }
 
@@ -116,7 +113,7 @@ type recallOut struct {
 	Hits  []recallHit `json:"hits"`
 }
 
-func addRecallTool(server *mcp.Server, svc *memory.Service, opts Options) {
+func addRecallTool(server *mcp.Server, svc *memory.Service) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "memory.recall",
 		Description: "Search memory semantically. Returns the most relevant memories for the query, " +
@@ -233,6 +230,108 @@ func addStatsTool(server *mcp.Server, svc *memory.Service) {
 			return nil, statsOut{}, err
 		}
 		return nil, statsOut{Count: s.Count}, nil
+	})
+}
+
+// --- memory.link -----------------------------------------------------------
+
+type linkIn struct {
+	FromID string `json:"from_id" jsonschema:"the source memory id"`
+	ToID   string `json:"to_id" jsonschema:"the target memory id"`
+	Kind   string `json:"kind,omitempty" jsonschema:"one of: related, supersedes, part_of; defaults to related"`
+}
+
+type linkOut struct {
+	Linked bool   `json:"linked"`
+	FromID string `json:"from_id"`
+	ToID   string `json:"to_id"`
+	Kind   string `json:"kind"`
+}
+
+func addLinkTool(server *mcp.Server, svc *memory.Service) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "memory.link",
+		Description: "Create a relation between two memories: related, supersedes (from is replaced by to) or part_of.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in linkIn) (*mcp.CallToolResult, linkOut, error) {
+		kind := in.Kind
+		if kind == "" {
+			kind = string(memory.RelationRelated)
+		}
+		if err := svc.Link(ctx, in.FromID, in.ToID, kind); err != nil {
+			return nil, linkOut{}, err
+		}
+		return nil, linkOut{Linked: true, FromID: in.FromID, ToID: in.ToID, Kind: kind}, nil
+	})
+}
+
+// --- memory.conflicts ------------------------------------------------------
+
+type conflictHit struct {
+	ID        string `json:"id"`
+	MemoryA   string `json:"memory_a"`
+	MemoryB   string `json:"memory_b"`
+	ContentA  string `json:"content_a"`
+	ContentB  string `json:"content_b"`
+	CreatedAt string `json:"created_at"`
+}
+
+type conflictsOut struct {
+	Conflicts []conflictHit `json:"conflicts"`
+}
+
+func addConflictsTool(server *mcp.Server, svc *memory.Service) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "memory.conflicts",
+		Description: "List open memory conflicts (contradictory facts detected at remember time). Resolve them with memory.resolve_conflict.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, conflictsOut, error) {
+		conflicts, err := svc.Conflicts(ctx)
+		if err != nil {
+			return nil, conflictsOut{}, err
+		}
+		out := conflictsOut{Conflicts: make([]conflictHit, 0, len(conflicts))}
+		for _, c := range conflicts {
+			h := conflictHit{
+				ID:        c.ID,
+				MemoryA:   c.MemoryA,
+				MemoryB:   c.MemoryB,
+				CreatedAt: c.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			}
+			if ma, _, err := svc.Store.Get(ctx, c.MemoryA); err == nil {
+				h.ContentA = ma.Content
+			}
+			if mb, _, err := svc.Store.Get(ctx, c.MemoryB); err == nil {
+				h.ContentB = mb.Content
+			}
+			out.Conflicts = append(out.Conflicts, h)
+		}
+		return nil, out, nil
+	})
+}
+
+// --- memory.resolve_conflict -----------------------------------------------
+
+type resolveIn struct {
+	ConflictID string `json:"conflict_id" jsonschema:"the conflict id to resolve"`
+	WinnerID   string `json:"winner_id" jsonschema:"the memory id that wins; the loser is marked superseded"`
+}
+
+type resolveOut struct {
+	Resolved bool   `json:"resolved"`
+	WinnerID string `json:"winner_id"`
+}
+
+func addResolveConflictTool(server *mcp.Server, svc *memory.Service) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "memory.resolve_conflict",
+		Description: "Resolve an open memory conflict by choosing the winning memory. The loser is automatically marked as superseded by the winner.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in resolveIn) (*mcp.CallToolResult, resolveOut, error) {
+		if err := svc.ResolveConflict(ctx, in.ConflictID, in.WinnerID); err != nil {
+			if err == memory.ErrNotFound {
+				return nil, resolveOut{Resolved: false, WinnerID: in.WinnerID}, nil
+			}
+			return nil, resolveOut{}, err
+		}
+		return nil, resolveOut{Resolved: true, WinnerID: in.WinnerID}, nil
 	})
 }
 

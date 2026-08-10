@@ -30,6 +30,32 @@ CREATE TABLE IF NOT EXISTS memories (
 );
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project);
 CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
+
+CREATE TABLE IF NOT EXISTS relations (
+    id         TEXT PRIMARY KEY,
+    from_id    TEXT NOT NULL,
+    to_id      TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (from_id) REFERENCES memories(id) ON DELETE CASCADE,
+    FOREIGN KEY (to_id) REFERENCES memories(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_relations_from ON relations(from_id);
+CREATE INDEX IF NOT EXISTS idx_relations_to ON relations(to_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_relations_unique ON relations(from_id, to_id, kind);
+
+CREATE TABLE IF NOT EXISTS conflicts (
+    id          TEXT PRIMARY KEY,
+    memory_a    TEXT NOT NULL,
+    memory_b    TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'open',
+    winner      TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL,
+    resolved_at TEXT,
+    FOREIGN KEY (memory_a) REFERENCES memories(id) ON DELETE CASCADE,
+    FOREIGN KEY (memory_b) REFERENCES memories(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_conflicts_status ON conflicts(status);
 `
 
 // SQLiteStore is the default persistent Store, backed by a single SQLite file.
@@ -223,6 +249,193 @@ func (s *SQLiteStore) Count(ctx context.Context, project string) (int, error) {
 		return 0, fmt.Errorf("count memories: %w", err)
 	}
 	return n, nil
+}
+
+func (s *SQLiteStore) CountProjects(ctx context.Context) (int, error) {
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT project) FROM memories`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count projects: %w", err)
+	}
+	return n, nil
+}
+
+// --- relations --------------------------------------------------------------
+
+func (s *SQLiteStore) AddRelation(ctx context.Context, r *Relation) error {
+	if _, _, err := s.get(ctx, r.FromID); err != nil {
+		return fmt.Errorf("relation source: %w", err)
+	}
+	if _, _, err := s.get(ctx, r.ToID); err != nil {
+		return fmt.Errorf("relation target: %w", err)
+	}
+	if r.ID == "" {
+		r.ID = NewID()
+	}
+	if r.Kind == "" {
+		r.Kind = RelationRelated
+	}
+	if r.CreatedAt.IsZero() {
+		r.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO relations (id, from_id, to_id, kind, created_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(from_id, to_id, kind) DO NOTHING`,
+		r.ID, r.FromID, r.ToID, string(r.Kind), ts(r.CreatedAt))
+	if err != nil {
+		return fmt.Errorf("insert relation: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) RelationsFrom(ctx context.Context, memoryID string) ([]Relation, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, from_id, to_id, kind, created_at FROM relations WHERE from_id=?`, memoryID)
+	if err != nil {
+		return nil, fmt.Errorf("query relations: %w", err)
+	}
+	defer rows.Close()
+	var out []Relation
+	for rows.Next() {
+		var r Relation
+		var kind, created string
+		if err := rows.Scan(&r.ID, &r.FromID, &r.ToID, &kind, &created); err != nil {
+			return nil, err
+		}
+		r.Kind = RelationKind(kind)
+		r.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) Superseding(ctx context.Context, memoryID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT from_id FROM relations WHERE to_id=? AND kind=?`, memoryID, string(RelationSupersedes))
+	if err != nil {
+		return nil, fmt.Errorf("query superseding: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// --- conflicts --------------------------------------------------------------
+
+func (s *SQLiteStore) CreateConflict(ctx context.Context, a, b string) (string, error) {
+	for _, m := range [][2]string{{a, b}, {b, a}} {
+		var id string
+		err := s.db.QueryRowContext(ctx, `
+			SELECT id FROM conflicts
+			WHERE ((memory_a=? AND memory_b=?) OR (memory_a=? AND memory_b=?))
+			  AND status='open'`,
+			m[0], m[1], m[1], m[0]).Scan(&id)
+		if err == nil {
+			return id, nil // already tracked
+		}
+		if err != sql.ErrNoRows {
+			return "", fmt.Errorf("query conflict: %w", err)
+		}
+	}
+	c := &Conflict{
+		ID:        NewID(),
+		MemoryA:   a,
+		MemoryB:   b,
+		Status:    ConflictOpen,
+		CreatedAt: time.Now().UTC(),
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO conflicts (id, memory_a, memory_b, status, winner, created_at, resolved_at)
+		VALUES (?, ?, ?, ?, '', ?, NULL)`,
+		c.ID, c.MemoryA, c.MemoryB, string(c.Status), ts(c.CreatedAt))
+	if err != nil {
+		return "", fmt.Errorf("insert conflict: %w", err)
+	}
+	return c.ID, nil
+}
+
+func (s *SQLiteStore) OpenConflicts(ctx context.Context) ([]Conflict, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, memory_a, memory_b, status, winner, created_at, resolved_at
+		FROM conflicts WHERE status='open' ORDER BY created_at`)
+	if err != nil {
+		return nil, fmt.Errorf("query conflicts: %w", err)
+	}
+	defer rows.Close()
+	var out []Conflict
+	for rows.Next() {
+		c, err := scanConflict(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *c)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) ResolveConflict(ctx context.Context, id, winner string) error {
+	// Winner must be one of the two memories in the conflict.
+	var a, b string
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT memory_a, memory_b FROM conflicts WHERE id=? AND status='open'`, id).Scan(&a, &b); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("query conflict: %w", err)
+	}
+	if winner != a && winner != b {
+		return fmt.Errorf("winner %q is not part of conflict %s", winner, id)
+	}
+	now := time.Now().UTC()
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE conflicts SET status='resolved', winner=?, resolved_at=? WHERE id=?`,
+		winner, ts(now), id)
+	if err != nil {
+		return fmt.Errorf("resolve conflict: %w", err)
+	}
+	// Record the losing memory as superseded by the winner.
+	loser := a
+	if winner == a {
+		loser = b
+	}
+	if loser != winner {
+		_ = s.AddRelation(ctx, &Relation{
+			FromID:    loser,
+			ToID:      winner,
+			Kind:      RelationSupersedes,
+			CreatedAt: now,
+		})
+	}
+	return nil
+}
+
+type conflictScanner interface{ Scan(dest ...any) error }
+
+func scanConflict(row conflictScanner) (*Conflict, error) {
+	var (
+		c              Conflict
+		status, winner string
+		created        string
+		resolved       sql.NullString
+	)
+	if err := row.Scan(&c.ID, &c.MemoryA, &c.MemoryB, &status, &winner, &created, &resolved); err != nil {
+		return nil, err
+	}
+	c.Status = ConflictStatus(status)
+	c.Winner = winner
+	c.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+	if resolved.Valid {
+		t, _ := time.Parse(time.RFC3339Nano, resolved.String)
+		c.ResolvedAt = &t
+	}
+	return &c, nil
 }
 
 type scanner interface{ Scan(dest ...any) error }

@@ -10,16 +10,31 @@ Agenții uită totul între sesiuni. Repeti același context, deciziile arhitect
 
 Poziționare: **igienă + încredere** (dedupe, provenance, conflicte, uitare inteligentă) ca funcții de bază, nu add-on-uri. Detalii în [PRD.md](./PRD.md).
 
-## Features (M0)
+## Features (M1)
 
-- `memory.remember` - stochează o memorie; dedupe automat (conținut similar din același proiect e consolidat, nu duplicat)
-- `memory.recall` - search semantic cu scor de similaritate, filtru pe proiect și tip
+- `memory.remember` - stochează o memorie; dedupe automat + detecție de conflicte
+- `memory.recall` - search semantic cu scor de similaritate, filtru pe proiect/tip, ascunde memoriile superseded
 - `memory.forget` - șterge o memorie
 - `memory.update` - modifică conținut/tip/proiect/importanță/metadata
-- `memory.stats` - număr de memorii
+- `memory.link` - relații între memorii: `related`, `supersedes`, `part_of`
+- `memory.conflicts` - listează conflictele deschise
+- `memory.resolve_conflict` - alege câștigătorul; perdedorul devine superseded
+- `memory.stats` - număr de memorii și proiecte
 - Tipuri de memorie: `fact`, `preference`, `decision`, `entity`, `context`, `episode`
 - Embeddings locale (Ollama) sau remote (OpenAI-compatibil)
 - SQLite pure-Go: un singur binary static, fără cgo, cross-compile ușor
+- CLI: `export`, `import`, `stats`, `list`, `eval`
+- Eval harness cu recall@k (20 de interogări)
+
+## CLI
+
+```bash
+forgetmenot stats                       # număr memorii + proiecte
+forgetmenot list -project demo          # listează memoriile
+forgetmenot export -project demo > mem.json   # backup portabil (cu embeddings)
+forgetmenot import < mem.json           # restore
+forgetmenot eval                        # seed + eval pe embeddings reale (Ollama)
+```
 
 ## Instalare
 
@@ -102,8 +117,8 @@ internal/mcpserver/ stratul MCP (tool-urile memory.*)
 
 ## Roadmap
 
-- M0 ✅ (acest release): remember/recall/forget/update/stats, SQLite, embeddings
-- M1: entity + relations, conflicte (`memory.conflicts`, `resolve_conflict`), CLI export/import, eval harness
+- M0 ✅: remember/recall/forget/update/stats, SQLite, embeddings
+- M1 ✅ (acest release): relații (link/supersedes), conflicte + rezolvare, CLI, eval harness
 - M2: decay + compresie automată, provenance, `project_context`, Web UI
 - M3: anti prompt injection, bridge cu CLAUDE.md, benchmark public, memory budget
 
