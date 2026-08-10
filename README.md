@@ -1,4 +1,4 @@
-# forgetmenot
+# forgetmenot 🧠
 
 Persistent, structured, semantically searchable memory for AI agents, delivered as a local **MCP server** written in Go. One static binary, zero runtime dependencies, data stays on your machine.
 
@@ -10,7 +10,7 @@ Agents forget everything between sessions. You re-explain the same context, arch
 
 Positioning: **hygiene + trust** (dedupe, provenance, conflicts, intelligent forgetting) as first-class features, not add-ons. Details in [PRD.md](./PRD.md).
 
-## Features (M1)
+## Features (M1) ✨
 
 - `memory.remember` - store a memory; automatic dedupe + conflict detection
 - `memory.recall` - semantic search with similarity score, project/type filters, hides superseded memories
@@ -36,7 +36,7 @@ forgetmenot import < mem.json           # restore
 forgetmenot eval                        # seed + eval against real embeddings (Ollama)
 ```
 
-## Install
+## Install 🚀
 
 Requires Go 1.26+:
 
@@ -83,7 +83,7 @@ Add the server to `~/.claude.json` or to `.mcp.json` in your project:
 
 If `forgetmenot` is not in `$PATH`, use the absolute path to the binary. The database is created automatically at `$XDG_DATA_HOME/forgetmenot/memory.db` (default `~/.local/share/forgetmenot/memory.db`). Override with `-db`.
 
-## Usage
+## Usage 💬
 
 Once connected, your agent has the `memory.*` tools. Examples:
 
@@ -116,7 +116,7 @@ internal/mcpserver/ MCP layer (memory.* tools)
 internal/eval/      eval harness (recall@k)
 ```
 
-## Roadmap
+## Roadmap 🗺️
 
 - M0 ✅: remember/recall/forget/update/stats, SQLite, embeddings
 - M1 ✅ (this release): relations (link/supersedes), conflicts + resolution, CLI, eval harness
