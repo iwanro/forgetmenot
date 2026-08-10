@@ -355,15 +355,15 @@ Diferențiatorii noștri, în ordinea importanței:
 - [x] Stats corect: count + project_count distinct.
 - [x] Fix review M0: validare importanță [0,1], validare tip la update, scan NULL resolved_at, importanță/conflict praguri documentate.
 
-### M2 - Funcționare automată (G7) + igienă (săptămâna 4-6)
-- [ ] `project_context`: sumar de intrare pentru sesiuni noi (recall automat per proiect).
-- [ ] `capture --summary`: subcomandă hook pentru `Stop`/`SessionEnd` (memorii episode/decision).
-- [ ] Config hooks Claude Code (`.claude/settings.json`): SessionStart + Stop/SessionEnd + UserPromptSubmit (opt-in).
-- [ ] Instrucțiuni agent (SKILL/plugin): recall la început de sarcină, remember la decizii noi.
-- [ ] Decay pe `episode`/`context` (bazat pe access).
-- [ ] Compresie: `summarize_project` + trigger periodic.
-- [ ] `forgetmenot maintain` (sau daemon) - decay + compresie pe timer, fără utilizator.
-- [ ] Proveniență + audit trail (sursă, sesiune, agent).
+### M2 - Funcționare automată (G7) + igienă (parțial, 2026-08-10)
+- [x] `project_context`: sumar de intrare pentru sesiuni noi (recall automat per proiect, fără embedder).
+- [x] `capture --summary`: subcomandă hook pentru `Stop`/`SessionEnd` (memorii episode/decision; funcționează fără embeddings).
+- [x] Config hooks Claude Code (`forgetmenot setup` scrie `.claude/settings.json`, merge cu fișiere existente): SessionStart + Stop.
+- [x] Instrucțiuni agent (`.claude/skills/forgetmenot/SKILL.md`): recall la început de sarcină, remember la decizii noi.
+- [x] Decay pe `episode`/`context` (bazat pe access, half-life 30 zile, floor configurabil).
+- [x] `forgetmenot maintain` - decay pe timer, fără utilizator (rulabil din cron).
+- [ ] Compresie: `summarize_project` + trigger periodic (necesită LLM pentru rezumare semantică; P1).
+- [ ] Proveniență + audit trail complet (sursă/sesiune/agent există parțial în `source` + `metadata`; tabel de audit în P1).
 - [ ] Web UI minimal (browse + edit + conflicte).
 - [ ] SEO/launch: HN, Reddit, X, Product Hunt. Răspuns la toate issues.
 

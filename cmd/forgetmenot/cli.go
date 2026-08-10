@@ -36,7 +36,7 @@ type cliExport struct {
 // Returns a process exit code.
 func runCLI(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: forgetmenot <serve|export|import|stats|list|eval> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: forgetmenot <serve|project_context|capture|maintain|setup|export|import|stats|list|eval> [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -50,6 +50,14 @@ func runCLI(args []string) int {
 		return cliListCmd(args[1:])
 	case "eval":
 		return cliEvalCmd(args[1:])
+	case "project_context":
+		return cliProjectContextCmd(args[1:])
+	case "capture":
+		return cliCaptureCmd(args[1:])
+	case "maintain":
+		return cliMaintainCmd(args[1:])
+	case "setup":
+		return cliSetupCmd(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", args[0])
 		return 2

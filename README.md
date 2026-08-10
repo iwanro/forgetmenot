@@ -10,7 +10,7 @@ Agents forget everything between sessions. You re-explain the same context, arch
 
 Positioning: **hygiene + trust** (dedupe, provenance, conflicts, intelligent forgetting) as first-class features, not add-ons. Details in [PRD.md](./PRD.md).
 
-## Features (M1) ✨
+## Features (M2) ✨
 
 - `memory.remember` - store a memory; automatic dedupe + conflict detection
 - `memory.recall` - semantic search with similarity score, project/type filters, hides superseded memories
@@ -26,14 +26,34 @@ Positioning: **hygiene + trust** (dedupe, provenance, conflicts, intelligent for
 - CLI: `export`, `import`, `stats`, `list`, `eval`
 - Eval harness with recall@k (20 queries)
 
+## Automatic operation (no manual steps) 🤖
+
+`forgetmenot` is designed to run on its own. The user does not execute memory
+commands; hooks, agent instructions and background maintenance do:
+
+- **SessionStart hook** → `forgetmenot project_context` injects the project summary automatically
+- **Stop hook** → `forgetmenot capture` saves a session summary as an episode automatically
+- **Agent skill** (`.claude/skills/forgetmenot/SKILL.md`) teaches the agent to recall/remember on its own
+- **`forgetmenot maintain`** (cron/daemon) applies decay automatically
+
+One-time setup in a project:
+
+```bash
+forgetmenot setup     # writes .claude/settings.json with the hooks
+```
+
 ## CLI
 
 ```bash
-forgetmenot stats                       # memory + project counts
-forgetmenot list -project demo          # list memories
-forgetmenot export -project demo > mem.json   # portable backup (with embeddings)
-forgetmenot import < mem.json           # restore
-forgetmenot eval                        # seed + eval against real embeddings (Ollama)
+forgetmenot project_context -project demo   # session-start context injection (used by hooks)
+forgetmenot capture -project demo           # session-end capture, reads summary from stdin (used by hooks)
+forgetmenot maintain                        # decay + future compression (cron-friendly)
+forgetmenot setup                           # write Claude Code hooks config
+forgetmenot stats                           # memory + project counts
+forgetmenot list -project demo              # list memories
+forgetmenot export -project demo > mem.json # portable backup (with embeddings)
+forgetmenot import < mem.json               # restore
+forgetmenot eval                            # seed + eval against real embeddings (Ollama)
 ```
 
 ## Install 🚀
@@ -119,9 +139,9 @@ internal/eval/      eval harness (recall@k)
 ## Roadmap 🗺️
 
 - M0 ✅: remember/recall/forget/update/stats, SQLite, embeddings
-- M1 ✅ (this release): relations (link/supersedes), conflicts + resolution, CLI, eval harness
-- M2: automatic decay + compression, provenance, `project_context`, Web UI
-- M3: prompt-injection defense, CLAUDE.md bridge, public benchmark, memory budget
+- M1 ✅: relations (link/supersedes), conflicts + resolution, CLI, eval harness
+- M2 ✅ (this release): automatic operation (project_context, capture, hooks, agent skill), decay + maintain
+- M3: prompt-injection defense, CLAUDE.md bridge, public benchmark, memory budget, Web UI
 
 ## License
 
