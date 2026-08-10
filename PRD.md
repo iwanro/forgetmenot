@@ -302,14 +302,14 @@ Diferențiatorii noștri, în ordinea importanței:
 
 ## 12. Roadmap
 
-### M0 - MVP (weekend - 1 săptămână)
-- [ ] Repo + structură + CI de bază.
-- [ ] Core: `remember`, `recall` (dedupe), `forget`, `update`.
-- [ ] Storage SQLite + index vector (brute-force la început).
-- [ ] Embedding Ollama default + fallback remote.
-- [ ] MCP server cu transport stdio.
-- [ ] Config pentru Claude Code (`.mcp.json`) + README cu demo GIF.
-- [ ] Teste unitare de bază.
+### M0 - MVP ✅ (2026-08-10)
+- [x] Repo + structură + CI de bază (GitHub Actions: vet, unit, integrare, build static).
+- [x] Core: `remember`, `recall` (dedupe), `forget`, `update`.
+- [x] Storage SQLite (modernc.org/sqlite, pure-Go) + cosine brute-force.
+- [x] Embedding Ollama default + fallback OpenAI-compatibil.
+- [x] MCP server cu transport stdio (SDK oficial MCP Go, 5 tool-uri).
+- [x] Config pentru Claude Code (`.mcp.json`) + README.
+- [x] Teste unitare + test de integrare MCP end-to-end.
 
 ### M1 - Model de date complet (săptămâna 2-3)
 - [ ] Tipuri `decision`, `preference`, `entity`, `context`, `episode`.
