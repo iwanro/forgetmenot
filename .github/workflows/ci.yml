@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test (unit)
+        run: go test ./...
+
+      - name: Test (integration, MCP end-to-end)
+        run: go test ./cmd/agent-memory/ -run TestMCPServerEndToEnd -v
+
+      - name: Build static binary
+        run: make build
+
+      - name: Verify binary is static
+        run: |
+          file bin/agent-memory
+          ! ldd bin/agent-memory 2>&1 | grep -q "dynamic"
