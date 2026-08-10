@@ -57,6 +57,7 @@ Agenții AI nu au memorie. Consecințe concrete, resimțite zilnic de dezvoltato
 - G4. Uitare inteligentă (decay) bazată pe utilizare: ce nu e reamintit, își pierde prioritatea.
 - G5. Detecție de conflicte (fapte contradictorii) cu flux de rezolvare.
 - G6. Zero config pentru agentul principal (Claude Code), instalare într-o comandă.
+- **G7 (decizie produs, 2026-08-10): funcționare automată.** Memoria se captează și se injectează AUTOMAT (hooks + instrucțiuni agent + întreținere în fundal), fără ca utilizatorul să ruleze comenzi manual. Manual rămâne doar ca override/oprire explicită.
 
 ### 3.2 Non-goals (la ce NU ne angajăm în v1)
 
@@ -65,7 +66,7 @@ Agenții AI nu au memorie. Consecințe concrete, resimțite zilnic de dezvoltato
 - NG3. Nu înlocuim sistemul de fișiere al proiectului (nu e un storage de cod).
 - NG4. Nu facem fine-tuning sau antrenare pe memoria utilizatorului.
 - NG5. Nu suportăm multi-utilizator / echipe în v1.
-- NG6. Nu capturăm automat *tot* ce se întâmplă (privacy); memoria e bazată pe intenție + reguli.
+- NG6. Nu capturăm automat *tot* ce se întâmplă nefiltrat (privacy). Captura automată se face pe **reguli** (început/sfârșit de sesiune, sumar de sesiune, activitate de tool-uri), cu opt-out granular și redactare de secrete.
 
 ---
 
@@ -234,6 +235,39 @@ Componente:
 5. **CLI** (P1) - `memory export/import/stats/project_context` pentru scripturi și debugging.
 6. **Web UI** (P2) - browser pe memorii, editare manuală, rezolvare conflicte vizual.
 
+### 9.1 Funcționare automată (G7) - cum se întâmplă fără utilizator
+
+MCP pe stdio e pasiv: răspunde doar la apeluri. "Automat" se realizează prin trei straturi, toate folosind același binary și același DB:
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ 1. Hooks la agent (Claude Code)                              │
+│    SessionStart  → forgetmenot project_context  → injectează │
+│                     contextul proiectului în CLAUDE.md /     │
+│                     prompt (auto-recall la pornire)          │
+│    Stop/SessionEnd → forgetmenot capture --summary  →        │
+│                     salvează automat ce s-a întâmplat        │
+│    UserPromptSubmit → (opt-in) forgetmenot recall pre-query  │
+├────────────────────────────────────────────────────────────┤
+│ 2. Instrucțiuni agent (plugin/SKILL)                         │
+│    Agentul e instruit să cheme mereu memory.recall când      │
+│    începe o sarcină și memory.remember la decizii/fapte noi  │
+│    → se comportă automat, fără ca utilizatorul să ceară      │
+├────────────────────────────────────────────────────────────┤
+│ 3. Întreținere în fundal                                     │
+│    forgetmenot daemon (sau cron: forgetmenot maintain)       │
+│    → decay + compresie + consolidare pe un timer, singur     │
+└────────────────────────────────────────────────────────────┘
+```
+
+Reguli de captură automată (opt-out granular, niciodată conținut nefiltrat):
+- La `Stop`/`SessionEnd`: sumar al sesiunii → memorii `episode` + `decision`.
+- La `SessionStart`: `project_context` → memorii `context` + `fact` relevante injectate.
+- Fapte marcate de utilizator/agent explicit (`remember` cu `auto=true` din instrucțiune).
+- Redactare de secrete: niciodată chei, token-uri, parole în memorii (M3: anti-injection + redactare).
+
+Manual rămâne doar ca: override (`forgetmenot remember` / `list` / `export`), debugging, backup.
+
 ---
 
 ## 10. Competiție și poziționare
@@ -321,10 +355,14 @@ Diferențiatorii noștri, în ordinea importanței:
 - [x] Stats corect: count + project_count distinct.
 - [x] Fix review M0: validare importanță [0,1], validare tip la update, scan NULL resolved_at, importanță/conflict praguri documentate.
 
-### M2 - Igienă automată (săptămâna 4-6)
+### M2 - Funcționare automată (G7) + igienă (săptămâna 4-6)
+- [ ] `project_context`: sumar de intrare pentru sesiuni noi (recall automat per proiect).
+- [ ] `capture --summary`: subcomandă hook pentru `Stop`/`SessionEnd` (memorii episode/decision).
+- [ ] Config hooks Claude Code (`.claude/settings.json`): SessionStart + Stop/SessionEnd + UserPromptSubmit (opt-in).
+- [ ] Instrucțiuni agent (SKILL/plugin): recall la început de sarcină, remember la decizii noi.
 - [ ] Decay pe `episode`/`context` (bazat pe access).
 - [ ] Compresie: `summarize_project` + trigger periodic.
-- [ ] `project_context` (sumar de intrare pentru sesiuni noi).
+- [ ] `forgetmenot maintain` (sau daemon) - decay + compresie pe timer, fără utilizator.
 - [ ] Proveniență + audit trail (sursă, sesiune, agent).
 - [ ] Web UI minimal (browse + edit + conflicte).
 - [ ] SEO/launch: HN, Reddit, X, Product Hunt. Răspuns la toate issues.
@@ -345,7 +383,7 @@ Diferențiatorii noștri, în ordinea importanței:
 
 1. ~~Limbaj de implementare~~: **ales: Go** (binary static unic, zero dependențe, SDK MCP oficial `modelcontextprotocol/go-sdk`, SQLite pure-Go fără cgo; embeddings prin HTTP către Ollama local sau API remote).
 2. **Index vectorial**: `sqlite-vec` vs faiss vs brute-force numpy. Depinde de volumul țintă (target: 10k-100k memorii).
-3. **Automat vs manual**: cât de agresivă e reținerea automată în v1. *Recomandare: manual + reguli simple (ex. fapte marcate de utilizator), automat abia în M2.*
+3. ~~Automat vs manual~~: **ales: automat (G7).** Reținerea și injectarea sunt automate (hooks + instrucțiuni agent + întreținere în fundal); manual = override. Reguli de captură: sumar de sesiune, fapte marcate, activitate de tool-uri; niciodată conținut nefiltrat.
 4. ~~Nume de produs~~: **ales: `forgetmenot`** (repo: github.com/iwanro/forgetmenot).
 5. **Model embedding implicit**: `nomic-embed-text` (Ollama) vs `bge-small` vs remote default. Trebuie testat pe eval set.
 
