@@ -166,14 +166,12 @@ func (s *Service) Recall(ctx context.Context, in RecallInput) ([]SearchResult, e
 	}
 	// Collect superseded memory IDs to hide them from results (PRD §6.3).
 	superseded := map[string]bool{}
-	for _, m := range mems {
-		ids, err := s.Store.Superseding(ctx, m.ID)
-		if err != nil {
-			return nil, err
-		}
-		for _, id := range ids {
-			superseded[id] = true
-		}
+	ids, err := s.Store.SupersededIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		superseded[id] = true
 	}
 	results := make([]SearchResult, 0, len(mems))
 	for i, m := range mems {

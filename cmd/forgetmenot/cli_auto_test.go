@@ -113,11 +113,15 @@ func TestCLISetupWritesHooks(t *testing.T) {
 	}
 }
 
-// TestCLISetupPreservesExistingSettings merges, not clobbers.
+// TestCLISetupPreservesExistingSettings merges, not clobbers: unknown
+// top-level fields AND existing hooks (e.g. PreToolUse) survive.
 func TestCLISetupPreservesExistingSettings(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "settings.json")
-	_ = os.WriteFile(out, []byte(`{"permissions":{"allow":["Bash"]}}`), 0o644)
+	_ = os.WriteFile(out, []byte(`{
+  "permissions": {"allow": ["Bash"]},
+  "hooks": {"PreToolUse": [{"command": "echo hi"}]}
+}`), 0o644)
 
 	if code := cliSetupTo([]string{"-db", "/tmp/x.db", "-out", out}); code != 0 {
 		t.Fatalf("setup exit %d", code)
@@ -127,5 +131,38 @@ func TestCLISetupPreservesExistingSettings(t *testing.T) {
 	_ = json.Unmarshal(b, &cfg)
 	if _, ok := cfg["permissions"]; !ok {
 		t.Fatalf("existing permissions clobbered:\n%s", b)
+	}
+	hooks, ok := cfg["hooks"].(map[string]any)
+	if !ok {
+		t.Fatalf("hooks missing:\n%s", b)
+	}
+	if _, ok := hooks["PreToolUse"]; !ok {
+		t.Fatalf("existing PreToolUse hook clobbered:\n%s", b)
+	}
+	if _, ok := hooks["SessionStart"]; !ok {
+		t.Fatalf("SessionStart hook missing after merge:\n%s", b)
+	}
+}
+
+// TestCLICaptureNoopOnEmptyInput keeps the hook green when stdin is empty.
+func TestCLICaptureNoopOnEmptyInput(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "cap.db")
+	out := captureStdout(t, func() {
+		if code := cliCaptureFrom(strings.NewReader("   \n"), []string{"-db", db, "-project", "p"}); code != 0 {
+			t.Fatalf("capture exit %d on empty input", code)
+		}
+	})
+	if !strings.Contains(out, "nothing to capture") {
+		t.Fatalf("expected no-op message, got: %q", out)
+	}
+}
+
+// TestShellJoin quotes arguments with spaces and single quotes.
+func TestShellJoin(t *testing.T) {
+	got := shellJoin("/path with space/bin", "project_context", "-db", "/x/y.db")
+	want := "'/path with space/bin' 'project_context' '-db' '/x/y.db'"
+	if got != want {
+		t.Fatalf("shellJoin = %q, want %q", got, want)
 	}
 }

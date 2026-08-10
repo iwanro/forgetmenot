@@ -31,14 +31,12 @@ func (s *Service) ProjectContext(ctx context.Context, project string, limit int)
 
 	// Filter out superseded memories, then rank by relevance.
 	superseded := map[string]bool{}
-	for _, m := range mems {
-		ids, err := s.Store.Superseding(ctx, m.ID)
-		if err != nil {
-			return "", nil, err
-		}
-		for _, id := range ids {
-			superseded[id] = true
-		}
+	ids, err := s.Store.SupersededIDs(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	for _, id := range ids {
+		superseded[id] = true
 	}
 
 	type scored struct {
@@ -177,7 +175,9 @@ func (s *Service) Decay(ctx context.Context, olderThan time.Duration, minImporta
 		if now.Sub(m.LastAccessedAt) < olderThan {
 			continue
 		}
-		// Halve importance per 30 days of no access, floor at minImportance.
+		// Importance shrinks by 20% per week of no access, floored at
+		// minImportance. ~30 days of neglect brings importance to ~38% of
+		// its original value.
 		weeks := now.Sub(m.LastAccessedAt).Hours() / (24 * 7)
 		newImp := m.Importance * math.Pow(0.8, weeks)
 		if newImp < minImportance {

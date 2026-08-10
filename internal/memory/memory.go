@@ -124,8 +124,9 @@ type Store interface {
 	// Relations.
 	AddRelation(ctx context.Context, r *Relation) error
 	RelationsFrom(ctx context.Context, memoryID string) ([]Relation, error)
-	// Superseding returns the IDs of memories that are superseded by memoryID.
-	Superseding(ctx context.Context, memoryID string) ([]string, error)
+	// SupersededIDs returns ALL memory IDs that are superseded by something.
+	// Single query; avoids N+1 lookups in recall/context paths.
+	SupersededIDs(ctx context.Context) ([]string, error)
 
 	// Conflicts.
 	// CreateConflict records a contradiction. If an open conflict between the

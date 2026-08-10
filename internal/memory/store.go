@@ -132,8 +132,26 @@ func (s *SQLiteStore) Insert(ctx context.Context, m *Memory, embedding []float64
 }
 
 func (s *SQLiteStore) Update(ctx context.Context, id string, patch UpdatePatch) error {
-	// Read-modify-write keeps the schema simple for M0 and gives us access
-	// counts/metadata merging for free.
+	// Fast path: pure access bump is a single atomic UPDATE, avoiding lost
+	// updates when recalls run concurrently.
+	if patch.BumpAccess && patch.Content == nil && patch.Type == nil &&
+		patch.Project == nil && patch.Importance == nil && len(patch.Metadata) == 0 {
+		now := time.Now().UTC()
+		res, err := s.db.ExecContext(ctx, `
+			UPDATE memories SET access_count = access_count + 1,
+				last_accessed_at = ?, updated_at = ? WHERE id=?`,
+			ts(now), ts(now), id)
+		if err != nil {
+			return fmt.Errorf("bump access: %w", err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrNotFound
+		}
+		return nil
+	}
+
+	// Read-modify-write keeps metadata merging simple; a single writer
+	// connection makes this safe in practice for non-bump patches.
 	m, _, err := s.get(ctx, id)
 	if err != nil {
 		return err
@@ -309,11 +327,11 @@ func (s *SQLiteStore) RelationsFrom(ctx context.Context, memoryID string) ([]Rel
 	return out, rows.Err()
 }
 
-func (s *SQLiteStore) Superseding(ctx context.Context, memoryID string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT from_id FROM relations WHERE to_id=? AND kind=?`, memoryID, string(RelationSupersedes))
+func (s *SQLiteStore) SupersededIDs(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT from_id FROM relations WHERE kind=?`, string(RelationSupersedes))
 	if err != nil {
-		return nil, fmt.Errorf("query superseding: %w", err)
+		return nil, fmt.Errorf("query superseded: %w", err)
 	}
 	defer rows.Close()
 	var out []string

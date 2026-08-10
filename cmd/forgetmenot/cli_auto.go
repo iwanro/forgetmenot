@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/iwanro/forgetmenot/internal/memory"
@@ -59,6 +60,12 @@ func cliCaptureFrom(in io.Reader, args []string) int {
 			return 1
 		}
 		summary = string(b)
+	}
+	if strings.TrimSpace(summary) == "" {
+		// Hooks fire even when there is nothing meaningful to capture; a
+		// no-op keeps the hook green instead of failing the session.
+		fmt.Println("capture: nothing to capture")
+		return 0
 	}
 
 	store := openStoreOrDie(*dbPath)
@@ -125,10 +132,12 @@ func cliSetupTo(args []string) int {
 		proj = "global"
 	}
 
+	// Shell-quote every interpolated value: paths and names may contain
+	// spaces, which would otherwise break the hook command line.
 	cfg := claudeSettings{
 		Hooks: claudeHooks{
-			SessionStart: []claudeHookCmd{{Command: fmt.Sprintf("%s project_context -db %s -project %s", absBin, *dbPath, proj)}},
-			Stop:         []claudeHookCmd{{Command: fmt.Sprintf("%s capture -db %s -project %s -source claude-code", absBin, *dbPath, proj)}},
+			SessionStart: []claudeHookCmd{{Command: shellJoin(absBin, "project_context", "-db", *dbPath, "-project", proj)}},
+			Stop:         []claudeHookCmd{{Command: shellJoin(absBin, "capture", "-db", *dbPath, "-project", proj, "-source", "claude-code")}},
 		},
 	}
 
@@ -142,6 +151,15 @@ func cliSetupTo(args []string) int {
 	}
 	fmt.Printf("wrote %s\n", *target)
 	return 0
+}
+
+// shellJoin quotes each argument for /bin/sh and joins them with spaces.
+func shellJoin(args ...string) string {
+	quoted := make([]string, 0, len(args))
+	for _, a := range args {
+		quoted = append(quoted, "'"+strings.ReplaceAll(a, "'", "'\\''")+"'")
+	}
+	return strings.Join(quoted, " ")
 }
 
 // claudeSettings mirrors the Claude Code settings.json hooks shape.
@@ -159,7 +177,8 @@ type claudeHookCmd struct {
 }
 
 // writeClaudeSettings writes settings JSON, preserving unknown top-level
-// fields when the file already exists.
+// fields and MERGING with existing hooks (e.g. a user's PreToolUse hook must
+// survive a second `forgetmenot setup` run).
 func writeClaudeSettings(path string, cfg claudeSettings) error {
 	existing := map[string]any{}
 	if b, err := os.ReadFile(path); err == nil {
@@ -167,10 +186,40 @@ func writeClaudeSettings(path string, cfg claudeSettings) error {
 			return fmt.Errorf("existing settings not valid JSON: %w", err)
 		}
 	}
-	existing["hooks"] = cfg.Hooks
+
+	// Keep every existing hook event; append our commands to SessionStart
+	// and Stop, and preserve all other hook types untouched.
+	merged := map[string]any{}
+	if cur, ok := existing["hooks"].(map[string]any); ok {
+		for k, v := range cur {
+			merged[k] = v
+		}
+	}
+	merged["SessionStart"] = appendHookCmds(existing, "SessionStart", cfg.Hooks.SessionStart...)
+	merged["Stop"] = appendHookCmds(existing, "Stop", cfg.Hooks.Stop...)
+
+	existing["hooks"] = merged
 	b, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, append(b, '\n'), 0o644)
+}
+
+// appendHookCmds returns the existing commands for a hook event plus extra
+// ones, preserving order.
+func appendHookCmds(settings map[string]any, event string, extra ...claudeHookCmd) []claudeHookCmd {
+	var out []claudeHookCmd
+	if cur, ok := settings["hooks"].(map[string]any); ok {
+		if v, ok := cur[event].([]any); ok {
+			for _, c := range v {
+				if m, ok := c.(map[string]any); ok {
+					if s, ok := m["command"].(string); ok {
+						out = append(out, claudeHookCmd{Command: s})
+					}
+				}
+			}
+		}
+	}
+	return append(out, extra...)
 }
