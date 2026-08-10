@@ -6,7 +6,7 @@ import (
 	"context"
 	"log"
 
-	"github.com/iwan/agent-memory/internal/memory"
+	"github.com/iwanro/forgetmenot/internal/memory"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -22,7 +22,7 @@ type Options struct {
 // blocks until the client disconnects.
 func Run(ctx context.Context, svc *memory.Service, opts Options) error {
 	if opts.Name == "" {
-		opts.Name = "agent-memory"
+		opts.Name = "forgetmenot"
 	}
 	if opts.Version == "" {
 		opts.Version = "v0.1.0"

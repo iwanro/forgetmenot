@@ -6,7 +6,7 @@
 | **Data** | 2026-08-10 |
 | **Autor** | iwan |
 | **Status** | În lucru |
-| **Nume de lucru** | `agent-memory` (alternativ: `cortex-memory`, `mnemo`) |
+| **Nume de lucru** | `forgetmenot` (ales 2026-08-10; alternativ: `agent-memory`) |
 | **Ideea** | #4 din lista discutată: "Memorie persistentă pentru agenți" |
 
 ---
@@ -191,8 +191,8 @@ Agenții AI nu au memorie. Consecințe concrete, resimțite zilnic de dezvoltato
 ### 8.3 Portabilitate și integrare
 
 - MCP transport: `stdio` (v1), `HTTP/SSE` (P1 pentru remote).
-- SDK: bibliotecă de bază în Python sau TypeScript (decizie în TBD, vezi §13) + client MCP.
-- Instalare: `uvx agent-memory` / `npx agent-memory` / instalare locală, plus un config exemplu pentru `claude_desktop_config.json` și `.mcp.json`.
+- SDK: bibliotecă de bază în **Go** (ales 2026-08-10: binary static unic, zero dependențe, SDK MCP oficial matur) + client MCP.
+- Instalare: `go install github.com/iwanro/forgetmenot/cmd/forgetmenot@latest` (binary static, zero dependențe), plus un config exemplu pentru `claude_desktop_config.json` și `.mcp.json`.
 
 ### 8.4 Calitate
 
@@ -211,11 +211,11 @@ Agenții AI nu au memorie. Consecințe concrete, resimțite zilnic de dezvoltato
                │ MCP (stdio)
 ┌──────────────▼──────────────┐
 │     MCP Server Layer        │  ← tools, validare, auth local
-│   (agent-memory/mcp)        │
+│   (forgetmenot/mcp)         │
 └──────────────┬──────────────┘
 ┌──────────────▼──────────────┐
 │      Core Library           │  ← remember/recall/conflict/decay
-│   (agent-memory/core)       │
+│   (forgetmenot/core)        │
 └──────────────┬──────────────┘
 ┌──────────────▼──────────────┐
 │   Storage Engine (SQLite)   │  ← tabele memorii + index vector
@@ -340,10 +340,10 @@ Diferențiatorii noștri, în ordinea importanței:
 
 ## 13. Decizii deschise (TBD)
 
-1. **Limbaj de implementare**: Python (ecosistem embeddings/ml bogat, ușor de citit) vs TypeScript (integrare MCP + npm, un singur runtime cu clienții). *Recomandare: Python pentru core + embeddings local, dar decizia se ia la kickoff.*
+1. ~~Limbaj de implementare~~: **ales: Go** (binary static unic, zero dependențe, SDK MCP oficial `modelcontextprotocol/go-sdk`, SQLite pure-Go fără cgo; embeddings prin HTTP către Ollama local sau API remote).
 2. **Index vectorial**: `sqlite-vec` vs faiss vs brute-force numpy. Depinde de volumul țintă (target: 10k-100k memorii).
 3. **Automat vs manual**: cât de agresivă e reținerea automată în v1. *Recomandare: manual + reguli simple (ex. fapte marcate de utilizator), automat abia în M2.*
-4. **Nume de produs**: `agent-memory`, `cortex-memory`, `mnemo` etc. (verificat disponibilitate npm/PyPI).
+4. ~~Nume de produs~~: **ales: `forgetmenot`** (repo: github.com/iwanro/forgetmenot).
 5. **Model embedding implicit**: `nomic-embed-text` (Ollama) vs `bge-small` vs remote default. Trebuie testat pe eval set.
 
 ---

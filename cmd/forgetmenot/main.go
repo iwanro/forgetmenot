@@ -1,4 +1,4 @@
-// Command agent-memory is an MCP server exposing persistent, structured,
+// Command forgetmenot is an MCP server exposing persistent, structured,
 // semantically searchable memory to any MCP-capable agent (Claude Code,
 // Cursor, etc.). See PRD.md in the repository root.
 package main
@@ -12,9 +12,9 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/iwan/agent-memory/internal/embed"
-	"github.com/iwan/agent-memory/internal/mcpserver"
-	"github.com/iwan/agent-memory/internal/memory"
+	"github.com/iwanro/forgetmenot/internal/embed"
+	"github.com/iwanro/forgetmenot/internal/mcpserver"
+	"github.com/iwanro/forgetmenot/internal/memory"
 )
 
 func main() {
@@ -29,7 +29,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		log.Printf("agent-memory %s", "v0.1.0")
+		log.Printf("forgetmenot %s", "v0.1.0")
 		return
 	}
 
@@ -54,25 +54,25 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := mcpserver.Run(ctx, svc, mcpserver.Options{Name: "agent-memory", Version: "v0.1.0"}); err != nil {
+	if err := mcpserver.Run(ctx, svc, mcpserver.Options{Name: "forgetmenot", Version: "v0.1.0"}); err != nil {
 		log.Fatalf("mcp server: %v", err)
 	}
 }
 
 // defaultDBPath resolves a stable, user-writable location for the database:
-// $XDG_DATA_HOME/agent-memory/memory.db, falling back to ~/.local/share.
+// $XDG_DATA_HOME/forgetmenot/memory.db, falling back to ~/.local/share.
 func defaultDBPath() string {
 	base := os.Getenv("XDG_DATA_HOME")
 	if base == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "agent-memory.db"
+			return "forgetmenot.db"
 		}
 		base = filepath.Join(home, ".local", "share")
 	}
-	dir := filepath.Join(base, "agent-memory")
+	dir := filepath.Join(base, "forgetmenot")
 	if err := os.MkdirAll(dir, 0o700); err == nil {
 		return filepath.Join(dir, "memory.db")
 	}
-	return "agent-memory.db"
+	return "forgetmenot.db"
 }

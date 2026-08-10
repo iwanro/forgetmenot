@@ -1,4 +1,4 @@
-# agent-memory
+# forgetmenot
 
 Memorie persistentă, structurată și căutabilă semantic pentru agenți AI, printr-un **MCP server** local, scris în Go. Un singur binary, zero dependențe de runtime, datele rămân pe mașina ta.
 
@@ -6,7 +6,7 @@ Funcționează cu orice agent care suportă MCP: Claude Code, Cursor, Codex, Ope
 
 ## De ce
 
-Agenții uită totul între sesiuni. Repeti același context, deciziile arhitecturale se pierd, preferințele tale sunt ignorate. `agent-memory` dă agenților tăi o memorie de lungă durată: fapte, decizii, preferințe, entități, context de proiect și episoade, stocate local și găsite semantic.
+Agenții uită totul între sesiuni. Repeti același context, deciziile arhitecturale se pierd, preferințele tale sunt ignorate. `forgetmenot` dă agenților tăi o memorie de lungă durată: fapte, decizii, preferințe, entități, context de proiect și episoade, stocate local și găsite semantic.
 
 Poziționare: **igienă + încredere** (dedupe, provenance, conflicte, uitare inteligentă) ca funcții de bază, nu add-on-uri. Detalii în [PRD.md](./PRD.md).
 
@@ -26,14 +26,14 @@ Poziționare: **igienă + încredere** (dedupe, provenance, conflicte, uitare in
 Ai nevoie de Go 1.26+:
 
 ```bash
-go install github.com/iwan/agent-memory/cmd/agent-memory@latest
+go install github.com/iwanro/forgetmenot/cmd/forgetmenot@latest
 ```
 
 Sau build local:
 
 ```bash
 make build
-./bin/agent-memory -version
+./bin/forgetmenot -version
 ```
 
 ### Embeddings
@@ -48,7 +48,7 @@ ollama serve  # implicit: http://localhost:11434
 **Alternativ, remote (OpenAI-compatibil):**
 
 ```bash
-agent-memory -embed openai -embed-url https://api.openai.com/v1 -embed-api-key $OPENAI_API_KEY
+forgetmenot -embed openai -embed-url https://api.openai.com/v1 -embed-api-key $OPENAI_API_KEY
 ```
 
 ## Configurare pentru Claude Code
@@ -58,15 +58,15 @@ Adaugă serverul în `~/.claude.json` sau în `.mcp.json` din proiectul tău:
 ```json
 {
   "mcpServers": {
-    "agent-memory": {
-      "command": "agent-memory",
+    "forgetmenot": {
+      "command": "forgetmenot",
       "args": []
     }
   }
 }
 ```
 
-Dacă `agent-memory` nu e în `$PATH`, folosește calea absolută către binary. Baza de date e creată automat în `$XDG_DATA_HOME/agent-memory/memory.db` (implicit `~/.local/share/agent-memory/memory.db`). Poți suprascrie cu `-db`.
+Dacă `forgetmenot` nu e în `$PATH`, folosește calea absolută către binary. Baza de date e creată automat în `$XDG_DATA_HOME/forgetmenot/memory.db` (implicit `~/.local/share/forgetmenot/memory.db`). Poți suprascrie cu `-db`.
 
 ## Cum îl folosești
 
@@ -94,7 +94,7 @@ make lint    # go vet
 Structura:
 
 ```
-cmd/agent-memory/   entry point + flag-uri
+cmd/forgetmenot/    entry point + flag-uri
 internal/memory/    core: model, SQLite store, service (remember/recall/...)
 internal/embed/     embedding providers (Ollama, OpenAI-compat)
 internal/mcpserver/ stratul MCP (tool-urile memory.*)

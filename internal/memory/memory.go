@@ -1,5 +1,5 @@
 // Package memory defines the core domain model and storage interfaces for
-// agent-memory: persistent, structured, semantically searchable memory.
+// forgetmenot: persistent, structured, semantically searchable memory.
 package memory
 
 import (

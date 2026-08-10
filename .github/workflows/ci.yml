@@ -23,12 +23,12 @@ jobs:
         run: go test ./...
 
       - name: Test (integration, MCP end-to-end)
-        run: go test ./cmd/agent-memory/ -run TestMCPServerEndToEnd -v
+        run: go test ./cmd/forgetmenot/ -run TestMCPServerEndToEnd -v
 
       - name: Build static binary
         run: make build
 
       - name: Verify binary is static
         run: |
-          file bin/agent-memory
-          ! ldd bin/agent-memory 2>&1 | grep -q "dynamic"
+          file bin/forgetmenot
+          ! ldd bin/forgetmenot 2>&1 | grep -q "dynamic"

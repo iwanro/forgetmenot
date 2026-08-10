@@ -76,8 +76,8 @@ func TestMCPServerEndToEnd(t *testing.T) {
 
 	// Compile the real binary once.
 	tmp := t.TempDir()
-	bin := filepath.Join(tmp, "agent-memory")
-	build := exec.Command("go", "build", "-o", bin, "./cmd/agent-memory")
+	bin := filepath.Join(tmp, "forgetmenot")
+	build := exec.Command("go", "build", "-o", bin, "./cmd/forgetmenot")
 	build.Dir = "../.."
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)

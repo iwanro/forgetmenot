@@ -1,4 +1,4 @@
-module github.com/iwan/agent-memory
+module github.com/iwanro/forgetmenot
 
 go 1.26.5
 
