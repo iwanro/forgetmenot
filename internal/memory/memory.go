@@ -106,6 +106,7 @@ type UpdatePatch struct {
 type SearchResult struct {
 	Memory *Memory
 	Score  float64
+	Topics []Topic
 }
 
 // RelationKind describes how two memories relate. See PRD §6.3.

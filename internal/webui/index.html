@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>forgetmenot</title>
+<style>
+  :root { --bg:#12161c; --panel:#1a2028; --border:#26303c; --fg:#d5dde6; --dim:#8b98a5; --acc:#54c07c; --warn:#e0a83f; --danger:#e06060; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--fg); }
+  header { display:flex; align-items:center; gap:16px; padding:14px 24px; border-bottom:1px solid var(--border); background:var(--panel); }
+  header h1 { font-size:18px; margin:0; color:var(--acc); }
+  nav button { background:none; border:1px solid var(--border); color:var(--fg); padding:6px 14px; border-radius:6px; cursor:pointer; }
+  nav button.active { background:var(--acc); color:#0b0f14; border-color:var(--acc); font-weight:600; }
+  main { max-width:1000px; margin:24px auto; padding:0 24px; }
+  .filters { display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap; }
+  input, select { background:var(--panel); border:1px solid var(--border); color:var(--fg); padding:7px 10px; border-radius:6px; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px 16px; margin-bottom:10px; }
+  .card .meta { color:var(--dim); font-size:13px; margin-top:6px; }
+  .tag { display:inline-block; background:#24303d; color:var(--acc); border-radius:4px; padding:1px 8px; font-size:12px; margin-right:4px; }
+  .badge { display:inline-block; border-radius:4px; padding:1px 8px; font-size:12px; }
+  .badge.decision { background:#2b3646; color:#7fb4ff; }
+  .badge.fact { background:#243c2e; color:var(--acc); }
+  .badge.episode { background:#3a2f24; color:var(--warn); }
+  .badge.untrusted { background:#3d2323; color:var(--danger); }
+  .card button { background:none; border:none; color:var(--danger); cursor:pointer; float:right; }
+  .empty { color:var(--dim); text-align:center; padding:40px 0; }
+  .conflict { border-left:3px solid var(--warn); }
+  .conflict button.resolve { background:var(--acc); color:#0b0f14; border:none; border-radius:6px; padding:4px 12px; cursor:pointer; float:right; }
+  .toast { position:fixed; bottom:20px; right:20px; background:var(--acc); color:#0b0f14; padding:10px 18px; border-radius:8px; display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧠 forgetmenot</h1>
+  <nav>
+    <button data-view="memories" class="active">Memories</button>
+    <button data-view="timeline">Timeline</button>
+    <button data-view="conflicts">Conflicts</button>
+    <button data-view="sessions">Sessions</button>
+  </nav>
+</header>
+<main id="app"></main>
+<div class="toast" id="toast"></div>
+<script>
+const $ = sel => document.querySelector(sel);
+const app = $('#app');
+const views = ['memories','timeline','conflicts','sessions'];
+let current = 'memories';
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+}
+function toast(msg) { const t=$('#toast'); t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',2000); }
+function esc(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function badges(m) {
+  const t = (m.topics||[]).map(x=>`<span class="tag">${esc(x)}</span>`).join('');
+  const u = m.trust==='low' ? '<span class="badge untrusted">UNTRUSTED</span>' : '';
+  return t + u;
+}
+function meta(m) {
+  return `<div class="meta">${new Date(m.created_at).toLocaleString()} · ${esc(m.source||'?')} · ${m.session_id?('session '+m.session_id.slice(0,8)):''}</div>`;
+}
+
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>switchView(b.dataset.view));
+function switchView(v){ current=v; document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active', b.dataset.view===v)); render(); }
+
+function filters(){
+  const p = current==='timeline' ? `<input id="topic" placeholder="topic (empty = all)">` : '';
+  return `<div class="filters"><input id="project" placeholder="project (default global)"><input id="q" placeholder="search...">${p}<button onclick="render()">Refresh</button></div>`;
+}
+
+async function render(){
+  const project = (()=>{ const el=$('#project'); return el?el.value:''; })();
+  if (current==='memories') return renderMemories(project);
+  if (current==='timeline') return renderTimeline(project);
+  if (current==='conflicts') return renderConflicts();
+  if (current==='sessions') return renderSessions(project);
+}
+
+async function renderMemories(project){
+  const q = (()=>{ const el=$('#q'); return el?el.value:''; })();
+  const data = await api(`/api/memories?project=${encodeURIComponent(project)}`);
+  let mems = data.memories;
+  if (q) mems = mems.filter(m=>m.content.toLowerCase().includes(q.toLowerCase()));
+  mems.sort((a,b)=>b.created_at.localeCompare(a.created_at));
+  app.innerHTML = filters() + (mems.length? '' : '<div class="empty">No memories yet. Use <code>forgetmenot remember</code> or connect an agent.</div>');
+  for (const m of mems) {
+    const d = document.createElement('div');
+    d.className='card';
+    d.innerHTML = `<span class="badge ${m.type}">${esc(m.type)}</span> ${badges(m)}
+      <button onclick="del('${m.id}')">✕</button>
+      <div>${esc(m.content)}</div>${meta(m)}`;
+    app.appendChild(d);
+  }
+}
+
+async function renderTimeline(project){
+  const topic = (()=>{ const el=$('#topic'); return el?el.value:''; })();
+  const data = await api(`/api/timeline?project=${encodeURIComponent(project)}&topic=${encodeURIComponent(topic)}`);
+  app.innerHTML = filters() + (data.entries.length? '' : '<div class="empty">No timeline entries.</div>');
+  for (const e of data.entries) {
+    const d = document.createElement('div');
+    d.className='card';
+    const u = e.trust==='low' ? '<span class="badge untrusted">UNTRUSTED</span>' : '';
+    const tags = (e.topics||[]).map(x=>`<span class="tag">${esc(x)}</span>`).join('');
+    d.innerHTML = `<span class="badge ${e.type}">${esc(e.type)}</span> ${tags} ${u}
+      <div>${esc(e.content)}</div>
+      <div class="meta">${new Date(e.created_at).toLocaleString()} · ${esc(e.source||'?')} ${e.session_id?('· session '+e.session_id.slice(0,8)):''}</div>`;
+    app.appendChild(d);
+  }
+}
+
+async function renderConflicts(){
+  const data = await api('/api/conflicts');
+  app.innerHTML = filters() + (data.conflicts.length? '' : '<div class="empty">No open conflicts. 🎉</div>');
+  for (const c of data.conflicts) {
+    const d = document.createElement('div');
+    d.className='card conflict';
+    d.innerHTML = `<b>Conflict</b>
+      <div>1. ${esc(c.content_a||c.memory_a)}</div>
+      <div>2. ${esc(c.content_b||c.memory_b)}</div>
+      <button class="resolve" onclick="resolve('${c.id}','${c.memory_a}')">Keep 1</button>
+      <button class="resolve" onclick="resolve('${c.id}','${c.memory_b}')">Keep 2</button>`;
+    app.appendChild(d);
+  }
+}
+
+async function renderSessions(project){
+  const data = await api(`/api/sessions?project=${encodeURIComponent(project)}`);
+  app.innerHTML = filters() + (data.sessions.length? '' : '<div class="empty">No sessions yet.</div>');
+  for (const s of data.sessions) {
+    const d = document.createElement('div');
+    d.className='card';
+    const end = s.ended_at ? new Date(s.ended_at).toLocaleString() : 'open';
+    d.innerHTML = `<b>session ${s.id.slice(0,8)}</b> · started ${new Date(s.started_at).toLocaleString()} · ended ${end}
+      <div class="meta">${esc(s.summary||'no summary')}</div>`;
+    app.appendChild(d);
+  }
+}
+
+async function del(id){
+  if (!confirm('Delete this memory?')) return;
+  try { await api(`/api/memories/${id}`, {method:'DELETE'}); toast('deleted'); render(); }
+  catch(e){ toast(e.message); }
+}
+async function resolve(id, winner){
+  try { await api(`/api/conflicts/${id}/resolve`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({winner})}); toast('resolved'); render(); }
+  catch(e){ toast(e.message); }
+}
+
+render().catch(e=>{ app.innerHTML='<div class="empty">Error: '+esc(e.message)+'</div>'; });
+</script>
+</body>
+</html>

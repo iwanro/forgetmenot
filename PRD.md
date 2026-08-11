@@ -388,6 +388,15 @@ Diferențiatorii noștri, în ordinea importanței:
 - [x] Embeddings binare float32 (BLOB) cu magic byte; migrare transparentă de la JSON legacy.
 - [x] Setup generează hooks cu session start/end (automatizare completă).
 
+
+### M5 - Web UI + recall îmbogățit (2026-08-11)
+- [x] `forgetmenot web`: dashboard local embedded (go:embed) - memories, timeline, conflicte, sesiuni.
+- [x] JSON API: GET/PATCH/DELETE memories, timeline, conflicte + resolve, sesiuni, stats.
+- [x] Topics în recall output (MCP + Web).
+- [ ] HTTP/SSE transport pentru agenți remote (P1).
+- [ ] Plugin-uri / sink-uri (Notion, Jira) (P1).
+- [ ] Telemetrie opt-in (P1).
+
 ## 13. Decizii deschise (TBD)
 
 1. ~~Limbaj de implementare~~: **ales: Go** (binary static unic, zero dependențe, SDK MCP oficial `modelcontextprotocol/go-sdk`, SQLite pure-Go fără cgo; embeddings prin HTTP către Ollama local sau API remote).

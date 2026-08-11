@@ -4,10 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
 	"github.com/iwanro/forgetmenot/internal/memory"
+	"github.com/iwanro/forgetmenot/internal/webui"
 )
 
 // --- session ---------------------------------------------------------------
@@ -208,4 +210,26 @@ func exportMarkdown(ctx context.Context, svc *memory.Service, project string) (s
 		sb.WriteString("\n")
 	}
 	return sb.String(), nil
+}
+
+// cliWebCmd serves the local browser UI (embedded) plus a JSON API.
+func cliWebCmd(args []string) int {
+	fs := flag.NewFlagSet("web", flag.ExitOnError)
+	dbPath := fs.String("db", defaultDBPath(), "path to the SQLite database")
+	addr := fs.String("addr", "127.0.0.1:8090", "listen address")
+	fs.Parse(args)
+
+	store := openStoreOrDie(*dbPath)
+	defer store.Close()
+	svc := memory.NewService(store, nil)
+	svc.SetDBPath(*dbPath)
+
+	handler := webui.New(svc)
+	srv := &http.Server{Addr: *addr, Handler: handler}
+	fmt.Printf("forgetmenot web UI: http://%s\n", *addr)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		fmt.Fprintf(os.Stderr, "web: %v\n", err)
+		return 1
+	}
+	return 0
 }

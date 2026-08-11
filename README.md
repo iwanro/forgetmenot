@@ -17,7 +17,7 @@ Agents forget everything between sessions. You re-explain the same context, arch
 
 Positioning: **hygiene + trust** (dedupe, provenance, conflicts, intelligent forgetting) as first-class features, not add-ons. Details in [PRD.md](./PRD.md).
 
-## Features (M4) ✨
+## Features (M5) ✨
 
 - `memory.remember` - store a memory; automatic dedupe + conflict detection + topic labels
 - `memory.recall` - semantic search with similarity score, project/type filters, hides superseded memories, returns source + trust
@@ -32,6 +32,7 @@ Positioning: **hygiene + trust** (dedupe, provenance, conflicts, intelligent for
 - **Sessions**: memories grouped per agent session; `session start/end/list`
 - **Topics**: subject labels for cross-session correlation
 - **Markdown export**: `export-md` writes human/AI-readable `.md` per project
+- **Web UI**: `forgetmenot web` serves a local browser dashboard (memories, timeline, conflicts, sessions) from the same binary
 - **Compact embeddings**: binary float32 BLOB (legacy JSON auto-migrated)
 - **Trust levels + sanitization** (prompt-injection defense)
 - **CLAUDE.md bridge**: `bridge export` + `bridge import`
@@ -101,6 +102,7 @@ forgetmenot maintain                                   # decay + future compress
 forgetmenot setup                                      # write Claude Code hooks config
 forgetmenot bridge export|import -path CLAUDE.md       # CLAUDE.md sync
 forgetmenot export-md -project demo                    # human/AI-readable markdown
+forgetmenot web -addr 127.0.0.1:8090                  # local browser dashboard
 forgetmenot stats                                      # memory + project counts
 forgetmenot list -project demo                         # list memories
 forgetmenot export -project demo > mem.json            # portable backup (with embeddings)
@@ -209,8 +211,9 @@ internal/eval/      eval harness (recall@k)
 - M1 ✅: relations (link/supersedes), conflicts + resolution, CLI, eval harness
 - M2 ✅: automatic operation (project_context, capture, hooks, agent skill), decay + maintain
 - M3 ✅: trust levels + sanitization, CLAUDE.md bridge, memory budget, public benchmark
-- M4 ✅ (this release): sessions, topics, timeline correlation, markdown export, compact embeddings
-- M5: HTTP/SSE transport, plugins, Web UI, telemetry
+- M4 ✅: sessions, topics, timeline correlation, markdown export, compact embeddings
+- M5 ✅ (this release): Web UI dashboard, topics in recall
+- M6: HTTP/SSE transport, plugins, telemetry
 
 ## License
 

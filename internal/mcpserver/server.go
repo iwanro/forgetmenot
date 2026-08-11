@@ -107,14 +107,15 @@ type recallIn struct {
 }
 
 type recallHit struct {
-	ID         string  `json:"id"`
-	Content    string  `json:"content"`
-	Type       string  `json:"type"`
-	Project    string  `json:"project"`
-	Importance float64 `json:"importance"`
-	Source     string  `json:"source,omitempty"`
-	Trust      string  `json:"trust,omitempty"`
-	Score      float64 `json:"score"`
+	ID         string   `json:"id"`
+	Content    string   `json:"content"`
+	Type       string   `json:"type"`
+	Project    string   `json:"project"`
+	Importance float64  `json:"importance"`
+	Source     string   `json:"source,omitempty"`
+	Trust      string   `json:"trust,omitempty"`
+	Topics     []string `json:"topics,omitempty"`
+	Score      float64  `json:"score"`
 }
 
 type recallOut struct {
@@ -147,6 +148,7 @@ func addRecallTool(server *mcp.Server, svc *memory.Service) {
 				Importance: r.Memory.Importance,
 				Source:     r.Memory.Source,
 				Trust:      string(r.Memory.Trust),
+				Topics:     topicNames(r.Topics),
 				Score:      r.Score,
 			})
 		}
@@ -351,6 +353,14 @@ func addResolveConflictTool(server *mcp.Server, svc *memory.Service) {
 		}
 		return nil, resolveOut{Resolved: true, WinnerID: in.WinnerID}, nil
 	})
+}
+
+func topicNames(topics []memory.Topic) []string {
+	out := make([]string, 0, len(topics))
+	for _, t := range topics {
+		out = append(out, t.Name)
+	}
+	return out
 }
 
 func firstNonEmpty(vals ...string) string {
