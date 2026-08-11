@@ -131,3 +131,55 @@ func TestLLMOverHTTP(t *testing.T) {
 		t.Fatalf("topics = %+v", topics)
 	}
 }
+
+// TestSummarizeProjectNoEmbedder covers the real CLI path: Service with LLM
+// but nil Embedder must not panic and must mark episodes superseded.
+func TestSummarizeProjectNoEmbedder(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	svc := NewService(store, nil) // nil embedder, like the CLI
+	svc.LLM = fakeLLM{reply: `{"summary":"Old sessions covered auth."}`}
+
+	ctx := context.Background()
+	old := time.Now().UTC().Add(-48 * time.Hour)
+	var episodeIDs []string
+	for _, c := range []string{"old auth notes", "old cache notes"} {
+		m := &Memory{ID: NewID(), Type: TypeEpisode, Content: c, Project: "p",
+			Importance: 0.5, AccessCount: 1, LastAccessedAt: old, CreatedAt: old,
+			UpdatedAt: old, Source: "test", Trust: TrustHigh, Metadata: map[string]string{}}
+		if err := svc.Store.Insert(ctx, m, nil); err != nil {
+			t.Fatal(err)
+		}
+		episodeIDs = append(episodeIDs, m.ID)
+	}
+
+	if _, err := svc.SummarizeProject(ctx, "p", 1*time.Hour); err != nil {
+		t.Fatalf("SummarizeProject without embedder: %v", err)
+	}
+
+	// Episodes must now be superseded by the summary.
+	for _, id := range episodeIDs {
+		superseded, err := svc.Store.SupersededIDs(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, s := range superseded {
+			if s == id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("episode %s not superseded after summarize", id)
+		}
+	}
+	// The summary is a context memory.
+	n, _ := svc.Store.Count(ctx, "p")
+	if n != 3 {
+		t.Fatalf("count = %d, want 3 (2 episodes + summary)", n)
+	}
+}

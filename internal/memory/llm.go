@@ -60,6 +60,7 @@ func (s *Service) SummarizeProject(ctx context.Context, project string, olderTha
 	now := time.Now().UTC()
 	// Collect stale episodes + recent decisions for context.
 	type note struct {
+		id      string
 		content string
 		at      time.Time
 	}
@@ -70,8 +71,12 @@ func (s *Service) SummarizeProject(ctx context.Context, project string, olderTha
 			decisions = append(decisions, "- "+m.Content)
 		}
 		if m.Type == TypeEpisode && now.Sub(m.LastAccessedAt) > olderThan {
-			stale = append(stale, note{content: m.Content, at: m.CreatedAt})
+			stale = append(stale, note{id: m.ID, content: m.Content, at: m.CreatedAt})
 		}
+	}
+	// Keep the prompt bounded: newest 20 decisions.
+	if len(decisions) > 20 {
+		decisions = decisions[len(decisions)-20:]
 	}
 	if len(stale) == 0 {
 		return "", fmt.Errorf("no stale episodes to summarize in project %q", project)
@@ -102,20 +107,56 @@ func (s *Service) SummarizeProject(ctx context.Context, project string, olderTha
 		return "", fmt.Errorf("summarize: empty summary from LLM")
 	}
 
-	// Store the summary as a context memory with a marker.
-	_, _, err = s.Remember(ctx, RememberInput{
-		Content:    out.Summary,
-		Type:       TypeContext,
-		Project:    project,
-		Importance: 0.9,
-		Source:     "summarize",
-		Trust:      TrustHigh,
-		Metadata: map[string]string{
-			"kind": "project_summary",
-		},
-	})
-	if err != nil {
-		return "", err
+	// Store the summary as a context memory with a marker. If no embedder is
+	// configured (CLI summarize path), insert directly with an empty vector;
+	// it stays visible in context/timeline, just not in semantic recall.
+	var summaryID string
+	if s.Embedder != nil {
+		id, _, err := s.Remember(ctx, RememberInput{
+			Content:    out.Summary,
+			Type:       TypeContext,
+			Project:    project,
+			Importance: 0.9,
+			Source:     "summarize",
+			Trust:      TrustHigh,
+			Metadata: map[string]string{
+				"kind": "project_summary",
+			},
+		})
+		if err != nil {
+			return "", err
+		}
+		summaryID = id
+	} else {
+		now := time.Now().UTC()
+		m := &Memory{
+			ID:             NewID(),
+			Type:           TypeContext,
+			Content:        out.Summary,
+			Project:        project,
+			Importance:     0.9,
+			AccessCount:    1,
+			LastAccessedAt: now,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			Source:         "summarize",
+			Trust:          TrustHigh,
+			Metadata:       map[string]string{"kind": "project_summary"},
+		}
+		if err := s.Store.Insert(ctx, m, nil); err != nil {
+			return "", err
+		}
+		summaryID = m.ID
+	}
+
+	// Mark the summarized episodes as superseded by the summary so they stop
+	// dominating recall/project_context. This is what makes it compression.
+	for _, n := range stale {
+		_ = s.Store.AddRelation(ctx, &Relation{
+			FromID: n.id,
+			ToID:   summaryID,
+			Kind:   RelationSupersedes,
+		})
 	}
 	return out.Summary, nil
 }
