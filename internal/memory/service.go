@@ -289,16 +289,21 @@ func (s *Service) embedOne(ctx context.Context, text string) ([]float64, error) 
 	return vecs[0], nil
 }
 
+// Sanitize is the exported form of sanitizeContent, used by CLI write paths
+// (e.g. bridge import) that bypass the Service.
+func Sanitize(s string) string { return sanitizeContent(s) }
+
 // sanitizeContent strips control characters (keeping \n and \t), collapses
-// stray null bytes, and caps length. This limits both context-injection
-// surface and junk bytes in embeddings.
+// stray null bytes, and caps length by rune count so UTF-8 is never split.
+// This limits both context-injection surface and junk bytes in embeddings.
 func sanitizeContent(s string) string {
-	if len(s) > MaxContentLen {
-		s = s[:MaxContentLen]
+	runes := []rune(s)
+	if len(runes) > MaxContentLen {
+		runes = runes[:MaxContentLen]
 	}
 	var b strings.Builder
 	b.Grow(len(s))
-	for _, r := range s {
+	for _, r := range runes {
 		switch r {
 		case '\n', '\t':
 			b.WriteRune(r)

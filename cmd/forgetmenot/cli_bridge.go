@@ -77,26 +77,51 @@ func cliBridgeImportCmd(args []string) int {
 	defer store.Close()
 
 	ctx := context.Background()
+	// Load existing facts once so repeated runs are idempotent (no embedder
+	// available to dedupe semantically, so we dedupe by exact content).
+	existing, _, err := store.All(ctx, *project)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bridge import: %v\n", err)
+		return 1
+	}
+	seen := map[string]bool{}
+	for _, m := range existing {
+		if m.Type == memory.TypeFact {
+			seen[m.Content] = true
+		}
+	}
+
 	imported := 0
+	skipped := 0
 	for _, line := range strings.Split(section, "\n") {
 		line = strings.TrimSpace(line)
 		line = strings.TrimPrefix(line, "-")
+		line = strings.TrimPrefix(line, "*")
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		// Sanitize like every other write path: no control chars, length cap.
+		clean := memory.Sanitize(line)
+		if clean == "" || seen[clean] {
+			if clean != "" {
+				skipped++
+			}
+			continue
+		}
 		// No embedder guaranteed in hooks; store as high-trust fact with an
 		// empty vector (visible in context/list, not semantic recall).
+		now := time.Now().UTC()
 		m := &memory.Memory{
 			ID:             memory.NewID(),
 			Type:           memory.TypeFact,
-			Content:        line,
+			Content:        clean,
 			Project:        *project,
 			Importance:     0.6,
 			AccessCount:    1,
-			LastAccessedAt: time.Now().UTC(),
-			CreatedAt:      time.Now().UTC(),
-			UpdatedAt:      time.Now().UTC(),
+			LastAccessedAt: now,
+			CreatedAt:      now,
+			UpdatedAt:      now,
 			Source:         "CLAUDE.md",
 			Trust:          memory.TrustHigh,
 			Metadata:       map[string]string{},
@@ -105,9 +130,10 @@ func cliBridgeImportCmd(args []string) int {
 			fmt.Fprintf(os.Stderr, "bridge import: %v\n", err)
 			return 1
 		}
+		seen[clean] = true
 		imported++
 	}
-	fmt.Printf("bridge import: stored %d facts from %s\n", imported, *path)
+	fmt.Printf("bridge import: stored %d facts, skipped %d existing from %s\n", imported, skipped, *path)
 	return 0
 }
 

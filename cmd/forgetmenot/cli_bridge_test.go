@@ -68,12 +68,38 @@ func TestCLIBridgeImport(t *testing.T) {
 	if code := runCLI([]string{"bridge", "import", "-db", db, "-path", md, "-project", "p"}); code != 0 {
 		t.Fatalf("bridge import exit %d", code)
 	}
+	// Second run must be idempotent: no duplicate facts.
+	if code := runCLI([]string{"bridge", "import", "-db", db, "-path", md, "-project", "p"}); code != 0 {
+		t.Fatalf("bridge import (2nd) exit %d", code)
+	}
 
 	store := openStoreOrDie(db)
 	defer store.Close()
 	n, _ := store.Count(t.Context(), "p")
 	if n != 2 {
-		t.Fatalf("imported %d facts, want 2", n)
+		t.Fatalf("imported %d facts after 2 runs, want 2 (idempotent)", n)
+	}
+}
+
+func TestCLIBridgeImportSanitizes(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "CLAUDE.md")
+	// Interpreted string so \x00 is a real NUL byte.
+	section := fctOpen + "\n- evil\x00fact\x01with control chars\n" + fctClose
+	_ = os.WriteFile(md, []byte(section), 0o644)
+	db := filepath.Join(dir, "mem.db")
+
+	if code := runCLI([]string{"bridge", "import", "-db", db, "-path", md, "-project", "p"}); code != 0 {
+		t.Fatalf("bridge import exit %d", code)
+	}
+	store := openStoreOrDie(db)
+	defer store.Close()
+	mems, _, _ := store.All(t.Context(), "p")
+	if len(mems) != 1 {
+		t.Fatalf("imported %d facts, want 1", len(mems))
+	}
+	if strings.Contains(mems[0].Content, "\x00") || strings.Contains(mems[0].Content, "\x01") {
+		t.Fatalf("control chars not stripped: %q", mems[0].Content)
 	}
 }
 
