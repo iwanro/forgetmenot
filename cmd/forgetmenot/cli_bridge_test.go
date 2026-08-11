@@ -132,3 +132,31 @@ func TestProjectContextBudget(t *testing.T) {
 		t.Fatalf("header lost under budget:\n%s", small)
 	}
 }
+
+func TestCLIRememberStoresTypedMemory(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "rem.db")
+	if code := runCLI([]string{"remember", "-db", db, "-content", "we chose JWT for sessions", "-type", "decision", "-project", "p", "-source", "agent"}); code != 0 {
+		t.Fatalf("remember exit %d", code)
+	}
+	store := openStoreOrDie(db)
+	defer store.Close()
+	mems, _, _ := store.All(t.Context(), "p")
+	if len(mems) != 1 {
+		t.Fatalf("stored %d memories, want 1", len(mems))
+	}
+	if mems[0].Type != memory.TypeDecision {
+		t.Fatalf("type = %s, want decision", mems[0].Type)
+	}
+	if mems[0].Source != "agent" {
+		t.Fatalf("source = %q, want agent", mems[0].Source)
+	}
+}
+
+func TestCLIRememberRequiresContent(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "rem2.db")
+	if code := runCLI([]string{"remember", "-db", db, "-content", "  "}); code == 0 {
+		t.Fatal("expected non-zero exit for empty content")
+	}
+}

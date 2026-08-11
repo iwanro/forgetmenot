@@ -1,8 +1,15 @@
 # forgetmenot 🧠
 
+[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/iwanro/forgetmenot/actions/workflows/ci.yml/badge.svg)](https://github.com/iwanro/forgetmenot/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/iwanro/forgetmenot)](https://goreportcard.com/report/github.com/iwanro/forgetmenot)
+
 Persistent, structured, semantically searchable memory for AI agents, delivered as a local **MCP server** written in Go. One static binary, zero runtime dependencies, data stays on your machine.
 
 Works with any MCP-capable agent: Claude Code, Cursor, Codex, OpenClaw and others.
+
+![forgetmenot demo](docs/demo.gif)
 
 ## Why
 
@@ -60,6 +67,7 @@ import reads bullets from a `<!-- forgetmenot:facts -->` section.
 ## CLI
 
 ```bash
+forgetmenot remember -content "chose JWT for auth" -type decision -project demo  # store a memory (scripting/hooks)
 forgetmenot project_context -project demo -budget 4000  # session-start context injection (used by hooks)
 forgetmenot capture -project demo                       # session-end capture, reads summary from stdin (used by hooks)
 forgetmenot maintain                                    # decay + future compression (cron-friendly)

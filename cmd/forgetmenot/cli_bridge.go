@@ -197,3 +197,48 @@ func cliBridgeCmd(args []string) int {
 		return 2
 	}
 }
+
+// cliRememberCmd stores a single memory from the command line, for scripting
+// and custom hooks. Works without an embedder (empty vector, visible in
+// context/list) or with one when -embed is configured.
+func cliRememberCmd(args []string) int {
+	fs := flag.NewFlagSet("remember", flag.ExitOnError)
+	dbPath := fs.String("db", defaultDBPath(), "path to the SQLite database")
+	content := fs.String("content", "", "memory content")
+	typ := fs.String("type", "fact", "memory type: fact, preference, decision, entity, context, episode")
+	project := fs.String("project", "global", "project namespace")
+	source := fs.String("source", "cli", "source label")
+	importance := fs.Float64("importance", 0.5, "importance 0-1")
+	trust := fs.String("trust", "high", "trust level: high or low")
+	fs.Parse(args)
+
+	if strings.TrimSpace(*content) == "" {
+		fmt.Fprintln(os.Stderr, "remember: -content is required")
+		return 2
+	}
+	store := openStoreOrDie(*dbPath)
+	defer store.Close()
+
+	clean := memory.Sanitize(*content)
+	now := time.Now().UTC()
+	m := &memory.Memory{
+		ID:             memory.NewID(),
+		Type:           memory.Type(*typ),
+		Content:        clean,
+		Project:        *project,
+		Importance:     *importance,
+		AccessCount:    1,
+		LastAccessedAt: now,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		Source:         *source,
+		Trust:          memory.Trust(*trust),
+		Metadata:       map[string]string{},
+	}
+	if err := store.Insert(context.Background(), m, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "remember: %v\n", err)
+		return 1
+	}
+	fmt.Printf("remembered %s\n", m.ID)
+	return 0
+}
