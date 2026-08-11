@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -30,7 +31,7 @@ func NewOllama(baseURL, model string) *OllamaEmbedder {
 	if model == "" {
 		model = "nomic-embed-text"
 	}
-	return &OllamaEmbedder{BaseURL: baseURL, Model: model}
+	return &OllamaEmbedder{BaseURL: strings.TrimRight(baseURL, "/"), Model: model}
 }
 
 func (o *OllamaEmbedder) Embed(ctx context.Context, texts []string) ([][]float64, error) {
@@ -79,7 +80,7 @@ func NewOpenAICompat(baseURL, apiKey, model string) *OpenAICompatEmbedder {
 	if model == "" {
 		model = "text-embedding-3-small"
 	}
-	return &OpenAICompatEmbedder{BaseURL: baseURL, APIKey: apiKey, Model: model}
+	return &OpenAICompatEmbedder{BaseURL: strings.TrimRight(baseURL, "/"), APIKey: apiKey, Model: model}
 }
 
 func (o *OpenAICompatEmbedder) Embed(ctx context.Context, texts []string) ([][]float64, error) {

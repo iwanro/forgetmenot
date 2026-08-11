@@ -195,7 +195,7 @@ type updateOut struct {
 func addUpdateTool(server *mcp.Server, svc *memory.Service) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "memory.update",
-		Description: "Update a memory's content, type, project, importance or metadata.",
+		Description: "Update a memory's content, type, project, importance, trust or metadata.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in updateIn) (*mcp.CallToolResult, updateOut, error) {
 		patch := memory.UpdatePatch{Metadata: in.Metadata}
 		if in.Content != nil {
@@ -299,21 +299,23 @@ func addConflictsTool(server *mcp.Server, svc *memory.Service) {
 		if err != nil {
 			return nil, conflictsOut{}, err
 		}
+		// Load all memories once to avoid N+1 lookups per conflict.
+		content := map[string]string{}
+		if mems, _, err := svc.Store.All(ctx, ""); err == nil {
+			for _, m := range mems {
+				content[m.ID] = m.Content
+			}
+		}
 		out := conflictsOut{Conflicts: make([]conflictHit, 0, len(conflicts))}
 		for _, c := range conflicts {
-			h := conflictHit{
+			out.Conflicts = append(out.Conflicts, conflictHit{
 				ID:        c.ID,
 				MemoryA:   c.MemoryA,
 				MemoryB:   c.MemoryB,
+				ContentA:  content[c.MemoryA],
+				ContentB:  content[c.MemoryB],
 				CreatedAt: c.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
-			}
-			if ma, _, err := svc.Store.Get(ctx, c.MemoryA); err == nil {
-				h.ContentA = ma.Content
-			}
-			if mb, _, err := svc.Store.Get(ctx, c.MemoryB); err == nil {
-				h.ContentB = mb.Content
-			}
-			out.Conflicts = append(out.Conflicts, h)
+			})
 		}
 		return nil, out, nil
 	})

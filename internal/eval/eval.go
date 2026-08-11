@@ -22,11 +22,11 @@ type Case struct {
 
 // Result aggregates a run over the dataset.
 type Result struct {
-	Total      int
-	Passed     int
-	RecallAtK  float64 // passed/total
-	Failures   []Failure
-	FailedText string
+	Total     int
+	Passed    int
+	RecallAtK float64 // passed/total
+	Failures  []Failure
+	Errors    []string // recall errors encountered during the run
 }
 
 // Failure records a single missed case.
@@ -51,6 +51,11 @@ func Run(ctx context.Context, svc *memory.Service, cases []Case) Result {
 			Limit:   k,
 		})
 		res.Total++
+		if err != nil {
+			// A recall error is a real failure signal, not a silent miss.
+			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", c.Query, err))
+			continue
+		}
 		ok := false
 		got := make([]string, 0, len(hits))
 		for _, h := range hits {
@@ -64,7 +69,6 @@ func Run(ctx context.Context, svc *memory.Service, cases []Case) Result {
 		} else {
 			res.Failures = append(res.Failures, Failure{Query: c.Query, Expected: c.Expected, Got: got})
 		}
-		_ = err // recall errors count as a miss; the failure shows empty Got
 	}
 	if res.Total > 0 {
 		res.RecallAtK = float64(res.Passed) / float64(res.Total)

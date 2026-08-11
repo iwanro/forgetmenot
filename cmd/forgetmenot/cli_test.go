@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/iwanro/forgetmenot/internal/memory"
 )
@@ -99,5 +100,26 @@ func TestCLIStatsAndList(t *testing.T) {
 	code = runCLI([]string{"list", "-db", db, "-project", "p"})
 	if code != 0 {
 		t.Fatalf("list exit %d", code)
+	}
+}
+
+func TestTruncateRuneSafe(t *testing.T) {
+	// Multi-byte runes must not be split in half.
+	s := "caractere românești ăâîșț și emoji 🧠🔐"
+	got := truncate(s, 10)
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncate produced invalid UTF-8: %q", got)
+	}
+	if len([]rune(got)) != 10 {
+		t.Fatalf("truncate len = %d runes, want 10", len([]rune(got)))
+	}
+}
+
+func TestCLIImportRejectsInvalidType(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "imp.db")
+	data := `{"version":1,"memories":[{"id":"x1","type":"bogus","content":"hi","project":"p"}]}`
+	if code := cliImportFrom([]string{"-db", db}, strings.NewReader(data)); code == 0 {
+		t.Fatal("expected non-zero exit for invalid memory type")
 	}
 }

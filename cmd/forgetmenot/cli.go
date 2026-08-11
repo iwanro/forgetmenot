@@ -193,14 +193,25 @@ func cliImportFrom(args []string, in io.Reader) int {
 	ctx := context.Background()
 	inserted := 0
 	for _, r := range doc.Memories {
+		typ := memory.Type(r.Type)
+		if !memory.ValidTypes[typ] {
+			fmt.Fprintf(os.Stderr, "import: %s: invalid memory type %q\n", r.ID, r.Type)
+			return 1
+		}
 		trust := memory.Trust(r.Trust)
 		if trust == "" {
 			trust = memory.TrustHigh
 		}
+		// Sanitize like every write path: control chars stripped, length cap.
+		content := memory.Sanitize(r.Content)
+		if content == "" {
+			fmt.Fprintf(os.Stderr, "import: %s: empty content after sanitize\n", r.ID)
+			return 1
+		}
 		m := &memory.Memory{
 			ID:         r.ID,
-			Type:       memory.Type(r.Type),
-			Content:    r.Content,
+			Type:       typ,
+			Content:    content,
 			Project:    r.Project,
 			Importance: r.Importance,
 			Source:     r.Source,
@@ -266,8 +277,9 @@ func cliListCmd(args []string) int {
 }
 
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	runes := []rune(s)
+	if len(runes) <= n {
 		return s
 	}
-	return s[:n-3] + "..."
+	return string(runes[:n-3]) + "..."
 }
