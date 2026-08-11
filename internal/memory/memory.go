@@ -61,7 +61,32 @@ type Memory struct {
 	UpdatedAt      time.Time         `json:"updated_at"`
 	Source         string            `json:"source"`
 	Trust          Trust             `json:"trust"`
+	SessionID      string            `json:"session_id,omitempty"`
 	Metadata       map[string]string `json:"metadata"`
+}
+
+// Session groups memories captured during one agent session, enabling
+// cross-session topic correlation. PRD M4.
+type Session struct {
+	ID        string     `json:"id"`
+	Project   string     `json:"project"`
+	StartedAt time.Time  `json:"started_at"`
+	EndedAt   *time.Time `json:"ended_at,omitempty"`
+	Summary   string     `json:"summary,omitempty"`
+}
+
+// Topic is a subject label attached to memories, used to correlate content
+// across sessions. PRD M4.
+type Topic struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Project string `json:"project"`
+}
+
+// TimelineEntry is one step in a topic's evolution across sessions.
+type TimelineEntry struct {
+	Memory  *Memory
+	Session *Session // nil if the memory is not linked to a session
 }
 
 // UpdatePatch describes the fields to change in an existing memory.
@@ -71,6 +96,7 @@ type UpdatePatch struct {
 	Project    *string
 	Importance *float64
 	Trust      *Trust
+	SessionID  *string
 	Metadata   map[string]string // merged into existing metadata
 	// BumpAccess signals recall: access_count+1 and last_accessed_at=now.
 	BumpAccess bool
@@ -150,6 +176,19 @@ type Store interface {
 	CreateConflict(ctx context.Context, a, b string) (string, error)
 	OpenConflicts(ctx context.Context) ([]Conflict, error)
 	ResolveConflict(ctx context.Context, id, winner string) error
+
+	// Sessions (PRD M4): group memories per agent session for cross-session
+	// topic correlation.
+	CreateSession(ctx context.Context, s *Session) error
+	EndSession(ctx context.Context, id string) error
+	GetSession(ctx context.Context, id string) (*Session, error)
+	SessionsForProject(ctx context.Context, project string) ([]Session, error)
+
+	// Topics (PRD M4): subject labels for cross-session correlation.
+	AddTopic(ctx context.Context, t *Topic) error
+	AssignTopic(ctx context.Context, memoryID, topicID string) error
+	TopicsForMemory(ctx context.Context, memoryID string) ([]Topic, error)
+	MemoriesByTopic(ctx context.Context, topicName, project string) ([]*Memory, error)
 
 	Close() error
 }

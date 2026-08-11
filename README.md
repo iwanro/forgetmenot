@@ -17,24 +17,49 @@ Agents forget everything between sessions. You re-explain the same context, arch
 
 Positioning: **hygiene + trust** (dedupe, provenance, conflicts, intelligent forgetting) as first-class features, not add-ons. Details in [PRD.md](./PRD.md).
 
-## Features (M3) ✨
+## Features (M4) ✨
 
-- `memory.remember` - store a memory; automatic dedupe + conflict detection
+- `memory.remember` - store a memory; automatic dedupe + conflict detection + topic labels
 - `memory.recall` - semantic search with similarity score, project/type filters, hides superseded memories, returns source + trust
+- `memory.timeline` - trace a topic's evolution across sessions (correlation!)
 - `memory.forget` - delete a memory
-- `memory.update` - change content/type/project/importance/trust/metadata
+- `memory.update` - change content/type/project/importance/trust/session/metadata
 - `memory.link` - relations between memories: `related`, `supersedes`, `part_of`
 - `memory.conflicts` - list open conflicts
 - `memory.resolve_conflict` - pick the winner; the loser becomes superseded
 - `memory.stats` - memory and project counts
 - Memory types: `fact`, `preference`, `decision`, `entity`, `context`, `episode`
-- **Trust levels + sanitization (prompt-injection defense)**: `high`/`low` trust, control-char stripping, content length caps, `[UNTRUSTED]` flags in context
-- **CLAUDE.md bridge**: `bridge export` (context into CLAUDE.md) + `bridge import` (facts from CLAUDE.md)
-- **Memory budget**: `project_context -budget N` keeps session injection bounded
+- **Sessions**: memories grouped per agent session; `session start/end/list`
+- **Topics**: subject labels for cross-session correlation
+- **Markdown export**: `export-md` writes human/AI-readable `.md` per project
+- **Compact embeddings**: binary float32 BLOB (legacy JSON auto-migrated)
+- **Trust levels + sanitization** (prompt-injection defense)
+- **CLAUDE.md bridge**: `bridge export` + `bridge import`
+- **Memory budget**: `project_context -budget N`
 - Local embeddings (Ollama) or remote (OpenAI-compatible)
 - Pure-Go SQLite: single static binary, no cgo, easy cross-compile
-- CLI: `export`, `import`, `stats`, `list`, `eval`
+- CLI: `remember`, `capture`, `session`, `timeline`, `project_context`, `maintain`, `setup`, `bridge`, `export-md`, `export/import`, `stats`, `list`, `eval`
 - Eval harness with recall@k (20 queries), JSON output for CI
+
+## Cross-session topic correlation 🔀
+
+Sessions group memories, topics label them. Together they answer "how did this
+subject evolve over time?":
+
+```bash
+forgetmenot session start -project demo      # hooks do this automatically
+forgetmenot remember -content "chose JWT" -type decision -project demo -topics auth
+forgetmenot session end -project demo        # hooks do this automatically
+
+# next session, days later:
+forgetmenot remember -content "switched refresh tokens to 60m" -type decision -project demo -topics auth
+
+forgetmenot timeline -project demo -topic auth
+# - [2026-08-11] we chose JWT for sessions (session a1b2c3d4) [decision]
+# - [2026-08-15] we switched refresh tokens to 60m (session e5f6a7b8) [decision]
+```
+
+The MCP tool `memory.timeline` exposes the same correlation to agents.
 
 ## Automatic operation (no manual steps) 🤖
 
@@ -67,17 +92,20 @@ import reads bullets from a `<!-- forgetmenot:facts -->` section.
 ## CLI
 
 ```bash
-forgetmenot remember -content "chose JWT for auth" -type decision -project demo  # store a memory (scripting/hooks)
-forgetmenot project_context -project demo -budget 4000  # session-start context injection (used by hooks)
-forgetmenot capture -project demo                       # session-end capture, reads summary from stdin (used by hooks)
-forgetmenot maintain                                    # decay + future compression (cron-friendly)
-forgetmenot setup                                       # write Claude Code hooks config
-forgetmenot bridge export|import -path CLAUDE.md        # CLAUDE.md sync
-forgetmenot stats                                       # memory + project counts
-forgetmenot list -project demo                          # list memories
-forgetmenot export -project demo > mem.json             # portable backup (with embeddings)
-forgetmenot import < mem.json                           # restore
-forgetmenot eval [-json]                                # seed + eval against real embeddings (Ollama)
+forgetmenot session start|end -project demo            # session lifecycle (hooks do this)
+forgetmenot timeline -project demo -topic auth         # topic evolution across sessions
+forgetmenot remember -content "chose JWT" -type decision -project demo -topics auth
+forgetmenot project_context -project demo -budget 4000 # session-start context injection (used by hooks)
+forgetmenot capture -project demo                      # session-end capture, reads summary from stdin (used by hooks)
+forgetmenot maintain                                   # decay + future compression (cron-friendly)
+forgetmenot setup                                      # write Claude Code hooks config
+forgetmenot bridge export|import -path CLAUDE.md       # CLAUDE.md sync
+forgetmenot export-md -project demo                    # human/AI-readable markdown
+forgetmenot stats                                      # memory + project counts
+forgetmenot list -project demo                         # list memories
+forgetmenot export -project demo > mem.json            # portable backup (with embeddings)
+forgetmenot import < mem.json                          # restore
+forgetmenot eval [-json]                               # seed + eval against real embeddings (Ollama)
 ```
 
 ## Benchmark
@@ -180,8 +208,9 @@ internal/eval/      eval harness (recall@k)
 - M0 ✅: remember/recall/forget/update/stats, SQLite, embeddings
 - M1 ✅: relations (link/supersedes), conflicts + resolution, CLI, eval harness
 - M2 ✅: automatic operation (project_context, capture, hooks, agent skill), decay + maintain
-- M3 ✅ (this release): trust levels + sanitization, CLAUDE.md bridge, memory budget, public benchmark
-- M4: HTTP/SSE transport, plugins, Web UI, telemetry
+- M3 ✅: trust levels + sanitization, CLAUDE.md bridge, memory budget, public benchmark
+- M4 ✅ (this release): sessions, topics, timeline correlation, markdown export, compact embeddings
+- M5: HTTP/SSE transport, plugins, Web UI, telemetry
 
 ## License
 

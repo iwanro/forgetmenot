@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -210,6 +211,8 @@ func cliRememberCmd(args []string) int {
 	source := fs.String("source", "cli", "source label")
 	importance := fs.Float64("importance", 0.5, "importance 0-1")
 	trust := fs.String("trust", "high", "trust level: high or low")
+	topics := fs.String("topics", "", "comma-separated topic labels")
+	session := fs.String("session", "", "session id to attach (default: current session)")
 	fs.Parse(args)
 
 	if strings.TrimSpace(*content) == "" {
@@ -220,6 +223,18 @@ func cliRememberCmd(args []string) int {
 	defer store.Close()
 
 	clean := memory.Sanitize(*content)
+	sessID := *session
+	if sessID == "" {
+		// Attach to the current-session marker if present (hooks).
+		if b, err := os.ReadFile(memory.SessionStatePath(*dbPath)); err == nil {
+			var cur struct {
+				ID string `json:"id"`
+			}
+			if json.Unmarshal(b, &cur) == nil {
+				sessID = cur.ID
+			}
+		}
+	}
 	now := time.Now().UTC()
 	m := &memory.Memory{
 		ID:             memory.NewID(),
@@ -233,11 +248,27 @@ func cliRememberCmd(args []string) int {
 		UpdatedAt:      now,
 		Source:         *source,
 		Trust:          memory.Trust(*trust),
+		SessionID:      sessID,
 		Metadata:       map[string]string{},
 	}
 	if err := store.Insert(context.Background(), m, nil); err != nil {
 		fmt.Fprintf(os.Stderr, "remember: %v\n", err)
 		return 1
+	}
+	if *topics != "" {
+		var names []string
+		for _, t := range strings.Split(*topics, ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				names = append(names, t)
+			}
+		}
+		if len(names) > 0 {
+			svc := memory.NewService(store, nil)
+			if err := svc.AssignTopics(context.Background(), m.ID, *project, names); err != nil {
+				fmt.Fprintf(os.Stderr, "remember: %v\n", err)
+				return 1
+			}
+		}
 	}
 	fmt.Printf("remembered %s\n", m.ID)
 	return 0

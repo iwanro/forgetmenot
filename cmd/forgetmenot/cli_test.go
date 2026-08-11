@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -69,7 +70,7 @@ func TestCLIExportImportRoundTrip(t *testing.T) {
 	if got.Metadata["status"] != "active" {
 		t.Fatalf("metadata lost: %+v", got.Metadata)
 	}
-	if len(emb) != 3 || emb[0] != 0.1 {
+	if len(emb) != 3 || math.Abs(emb[0]-0.1) > 1e-6 {
 		t.Fatalf("embedding lost: %v", emb)
 	}
 }

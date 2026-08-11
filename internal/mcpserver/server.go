@@ -41,8 +41,9 @@ func Run(ctx context.Context, svc *memory.Service, opts Options) error {
 	addConflictsTool(server, svc)
 	addResolveConflictTool(server, svc)
 	addStatsTool(server, svc)
+	addTimelineTool(server, svc)
 
-	log.Printf("%s %s: %d memory tools registered", opts.Name, opts.Version, 8)
+	log.Printf("%s %s: %d memory tools registered", opts.Name, opts.Version, 9)
 	return server.Run(ctx, &mcp.StdioTransport{})
 }
 
@@ -55,6 +56,8 @@ type rememberIn struct {
 	Importance float64           `json:"importance,omitempty" jsonschema:"importance 0-1; defaults to 0.5"`
 	Source     string            `json:"source,omitempty" jsonschema:"where this memory came from"`
 	Trust      string            `json:"trust,omitempty" jsonschema:"trust level: high (default) or low for untrusted/external content"`
+	SessionID  string            `json:"session_id,omitempty" jsonschema:"session to attach this memory to; defaults to current session"`
+	Topics     []string          `json:"topics,omitempty" jsonschema:"topic labels for cross-session correlation"`
 	Metadata   map[string]string `json:"metadata,omitempty" jsonschema:"free-form key/value metadata"`
 }
 
@@ -83,6 +86,8 @@ func addRememberTool(server *mcp.Server, svc *memory.Service, opts Options) {
 			Importance: in.Importance,
 			Source:     firstNonEmpty(in.Source, opts.DefaultSrc),
 			Trust:      memory.Trust(in.Trust),
+			SessionID:  in.SessionID,
+			Topics:     in.Topics,
 			Metadata:   in.Metadata,
 		})
 		if err != nil {
@@ -355,4 +360,59 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// --- memory.timeline -------------------------------------------------------
+
+type timelineIn struct {
+	Project string `json:"project,omitempty" jsonschema:"project namespace; defaults to global"`
+	Topic   string `json:"topic,omitempty" jsonschema:"topic to trace across sessions; empty = all memories"`
+	Limit   int    `json:"limit,omitempty" jsonschema:"max entries; defaults to 50"`
+}
+
+type timelineEntry struct {
+	Content   string `json:"content"`
+	Type      string `json:"type"`
+	CreatedAt string `json:"created_at"`
+	Source    string `json:"source,omitempty"`
+	Trust     string `json:"trust,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	SessionAt string `json:"session_started_at,omitempty"`
+}
+
+type timelineOut struct {
+	Entries []timelineEntry `json:"entries"`
+}
+
+func addTimelineTool(server *mcp.Server, svc *memory.Service) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "memory.timeline",
+		Description: "Show how a topic evolved across sessions: all memories about it, oldest first, with session context. " +
+			"Use this to correlate what was discussed or decided about a subject over time.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in timelineIn) (*mcp.CallToolResult, timelineOut, error) {
+		project := in.Project
+		if project == "" {
+			project = memory.DefaultProject
+		}
+		entries, err := svc.Timeline(ctx, project, in.Topic, in.Limit)
+		if err != nil {
+			return nil, timelineOut{}, err
+		}
+		out := timelineOut{Entries: make([]timelineEntry, 0, len(entries))}
+		for _, e := range entries {
+			t := timelineEntry{
+				Content:   e.Memory.Content,
+				Type:      string(e.Memory.Type),
+				CreatedAt: e.Memory.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+				Source:    e.Memory.Source,
+				Trust:     string(e.Memory.Trust),
+				SessionID: e.Memory.SessionID,
+			}
+			if e.Session != nil {
+				t.SessionAt = e.Session.StartedAt.UTC().Format("2006-01-02T15:04:05Z")
+			}
+			out.Entries = append(out.Entries, t)
+		}
+		return nil, out, nil
+	})
 }

@@ -379,6 +379,15 @@ Diferențiatorii noștri, în ordinea importanței:
 
 ---
 
+
+### M4 - Corelare între sesiuni + format lizibil (2026-08-11)
+- [x] Sesiuni ca entitate: tabel `sessions`, `session start/end/list`, state file pentru hooks, `session_id` pe memorii.
+- [x] Topic-uri ca entitate: tabel `topics` + `memory_topics`, asignare la remember (`-topics`), dedupe pe (name, project).
+- [x] `memory.timeline` (MCP) + `timeline` (CLI): evoluția unui subiect între sesiuni, cu context de sesiune.
+- [x] `export-md`: fișier Markdown lizibil de om și AI per proiect.
+- [x] Embeddings binare float32 (BLOB) cu magic byte; migrare transparentă de la JSON legacy.
+- [x] Setup generează hooks cu session start/end (automatizare completă).
+
 ## 13. Decizii deschise (TBD)
 
 1. ~~Limbaj de implementare~~: **ales: Go** (binary static unic, zero dependențe, SDK MCP oficial `modelcontextprotocol/go-sdk`, SQLite pure-Go fără cgo; embeddings prin HTTP către Ollama local sau API remote).

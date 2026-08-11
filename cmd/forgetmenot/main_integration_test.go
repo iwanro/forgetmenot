@@ -103,8 +103,8 @@ func TestMCPServerEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(tools.Tools) != 8 {
-		t.Fatalf("want 8 tools, got %d: %+v", len(tools.Tools), tools.Tools)
+	if len(tools.Tools) != 9 {
+		t.Fatalf("want 9 tools, got %d: %+v", len(tools.Tools), tools.Tools)
 	}
 
 	// 2. Remember.

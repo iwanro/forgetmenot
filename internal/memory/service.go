@@ -24,6 +24,9 @@ type Service struct {
 	Store    Store
 	Embedder Embedder
 
+	// dbPathOverride places the current-session marker next to the DB.
+	dbPathOverride string
+
 	// DedupeThreshold: two memories with cosine similarity >= this value in
 	// the same project are considered duplicates; the new write reinforces
 	// the existing entry instead of inserting a copy. PRD §7.3.
@@ -47,6 +50,10 @@ func NewService(store Store, emb Embedder) *Service {
 	}
 }
 
+// SetDBPath records the database path so the session marker is written next
+// to it. Call from main after parsing flags.
+func (s *Service) SetDBPath(path string) { s.dbPathOverride = path }
+
 // RememberInput is the validated request for storing a memory.
 type RememberInput struct {
 	Content    string
@@ -54,7 +61,9 @@ type RememberInput struct {
 	Project    string
 	Importance float64
 	Source     string
-	Trust      Trust // defaults to TrustHigh
+	Trust      Trust  // defaults to TrustHigh
+	SessionID  string // optional; falls back to the current-session marker
+	Topics     []string
 	Metadata   map[string]string
 }
 
@@ -118,6 +127,11 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 		}
 	}
 
+	// Attach the current session unless one was provided explicitly.
+	if in.SessionID == "" {
+		in.SessionID = s.CurrentSessionID()
+	}
+
 	m := &Memory{
 		ID:             NewID(),
 		Type:           in.Type,
@@ -130,6 +144,7 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 		UpdatedAt:      time.Now().UTC(),
 		Source:         in.Source,
 		Trust:          in.Trust,
+		SessionID:      in.SessionID,
 		Metadata:       in.Metadata,
 	}
 	if m.Importance == 0 {
@@ -143,6 +158,11 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 	}
 	for _, other := range conflictIDs {
 		_, _ = s.Store.CreateConflict(ctx, other, m.ID)
+	}
+	if len(in.Topics) > 0 {
+		if err := s.AssignTopics(ctx, m.ID, m.Project, in.Topics); err != nil {
+			return "", false, err
+		}
 	}
 	return m.ID, true, nil
 }

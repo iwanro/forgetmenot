@@ -137,8 +137,14 @@ func cliSetupTo(args []string) int {
 	// spaces, which would otherwise break the hook command line.
 	cfg := claudeSettings{
 		Hooks: claudeHooks{
-			SessionStart: []claudeHookCmd{{Command: shellJoin(absBin, "project_context", "-db", *dbPath, "-project", proj)}},
-			Stop:         []claudeHookCmd{{Command: shellJoin(absBin, "capture", "-db", *dbPath, "-project", proj, "-source", "claude-code")}},
+			SessionStart: []claudeHookCmd{
+				{Command: shellJoin(absBin, "session", "start", "-db", *dbPath, "-project", proj)},
+				{Command: shellJoin(absBin, "project_context", "-db", *dbPath, "-project", proj)},
+			},
+			Stop: []claudeHookCmd{
+				{Command: shellJoin(absBin, "capture", "-db", *dbPath, "-project", proj, "-source", "claude-code")},
+				{Command: shellJoin(absBin, "session", "end", "-db", *dbPath)},
+			},
 		},
 	}
 

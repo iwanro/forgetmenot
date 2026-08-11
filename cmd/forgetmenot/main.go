@@ -23,7 +23,7 @@ func main() {
 	// maintain, setup. Everything else is the MCP server (serve is the default).
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-		case "export", "import", "stats", "list", "eval", "project_context", "capture", "maintain", "setup", "bridge", "remember":
+		case "export", "import", "stats", "list", "eval", "project_context", "capture", "maintain", "setup", "bridge", "remember", "session", "timeline", "export-md":
 			os.Exit(runCLI(os.Args[1:]))
 		}
 	}
@@ -55,6 +55,7 @@ func main() {
 	}
 
 	svc := memory.NewService(store, em)
+	svc.SetDBPath(*dbPath)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

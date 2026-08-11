@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go SQLite: keeps the binary static and cgo-free
@@ -26,11 +28,38 @@ CREATE TABLE IF NOT EXISTS memories (
     updated_at       TEXT NOT NULL,
     source           TEXT NOT NULL DEFAULT '',
     trust            TEXT NOT NULL DEFAULT 'high',
+    session_id       TEXT NOT NULL DEFAULT '',
     metadata         TEXT NOT NULL DEFAULT '{}',
     embedding        TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project);
 CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id         TEXT PRIMARY KEY,
+    project    TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    ended_at   TEXT,
+    summary    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project);
+
+CREATE TABLE IF NOT EXISTS topics (
+    id      TEXT PRIMARY KEY,
+    name    TEXT NOT NULL,
+    project TEXT NOT NULL,
+    UNIQUE(name, project)
+);
+CREATE INDEX IF NOT EXISTS idx_topics_project ON topics(project);
+
+CREATE TABLE IF NOT EXISTS memory_topics (
+    memory_id TEXT NOT NULL,
+    topic_id  TEXT NOT NULL,
+    PRIMARY KEY (memory_id, topic_id),
+    FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE,
+    FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_memory_topics_topic ON memory_topics(topic_id);
 
 CREATE TABLE IF NOT EXISTS relations (
     id         TEXT PRIMARY KEY,
@@ -77,18 +106,25 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
-	if err := migrateTrustColumn(db); err != nil {
+	if err := migrateColumns(db); err != nil {
 		db.Close()
 		return nil, err
+	}
+	// Indexes on migrated columns must be created after the ALTERs above.
+	if _, err := db.ExecContext(context.Background(),
+		`CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id)`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate: session index: %w", err)
 	}
 	return &SQLiteStore{db: db}, nil
 }
 
-// migrateTrustColumn adds the `trust` column to databases created before M3.
-// CREATE TABLE IF NOT EXISTS does not alter existing tables, so databases
-// from M0-M2 need an explicit, idempotent ALTER TABLE.
-func migrateTrustColumn(db *sql.DB) error {
+// migrateColumns adds columns introduced after the initial schema to existing
+// databases. CREATE TABLE IF NOT EXISTS does not alter existing tables, so we
+// check PRAGMA table_info and ALTER TABLE when a column is missing.
+func migrateColumns(db *sql.DB) error {
 	ctx := context.Background()
+	have := map[string]bool{}
 	rows, err := db.QueryContext(ctx, `PRAGMA table_info(memories)`)
 	if err != nil {
 		return fmt.Errorf("migrate: pragma: %w", err)
@@ -105,12 +141,24 @@ func migrateTrustColumn(db *sql.DB) error {
 		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
 			return fmt.Errorf("migrate: pragma scan: %w", err)
 		}
-		if name == "trust" {
-			return nil // already migrated
-		}
+		have[name] = true
 	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE memories ADD COLUMN trust TEXT NOT NULL DEFAULT 'high'`); err != nil {
-		return fmt.Errorf("migrate: add trust column: %w", err)
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	additions := []struct {
+		col, ddl string
+	}{
+		{"trust", `ALTER TABLE memories ADD COLUMN trust TEXT NOT NULL DEFAULT 'high'`},
+		{"session_id", `ALTER TABLE memories ADD COLUMN session_id TEXT NOT NULL DEFAULT ''`},
+	}
+	for _, a := range additions {
+		if have[a.col] {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, a.ddl); err != nil {
+			return fmt.Errorf("migrate: add %s column: %w", a.col, err)
+		}
 	}
 	return nil
 }
@@ -127,17 +175,38 @@ func NewID() string {
 	return hex.EncodeToString(b)
 }
 
-func encodeEmbedding(v []float64) (string, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "", fmt.Errorf("encode embedding: %w", err)
+func encodeEmbedding(v []float64) ([]byte, error) {
+	if len(v) == 0 {
+		// Column is NOT NULL; store a 1-byte empty marker instead of NULL.
+		return []byte{0x00}, nil
 	}
-	return string(b), nil
+	// Binary float32 BLOB: 4 bytes per value. Compact and fast to decode.
+	// A leading magic byte disambiguates from legacy JSON text.
+	buf := make([]byte, 1+4*len(v))
+	buf[0] = 0x01
+	for i, x := range v {
+		binary.LittleEndian.PutUint32(buf[1+4*i:], math.Float32bits(float32(x)))
+	}
+	return buf, nil
 }
 
-func decodeEmbedding(s string) ([]float64, error) {
+func decodeEmbedding(b []byte) ([]float64, error) {
+	if len(b) == 0 || (len(b) == 1 && b[0] == 0x00) {
+		return nil, nil
+	}
+	if b[0] == 0x01 {
+		if (len(b)-1)%4 != 0 {
+			return nil, fmt.Errorf("decode embedding: bad binary length %d", len(b))
+		}
+		out := make([]float64, (len(b)-1)/4)
+		for i := range out {
+			out[i] = float64(math.Float32frombits(binary.LittleEndian.Uint32(b[1+4*i:])))
+		}
+		return out, nil
+	}
+	// Legacy JSON text from M0-M2 databases.
 	var v []float64
-	if err := json.Unmarshal([]byte(s), &v); err != nil {
+	if err := json.Unmarshal(b, &v); err != nil {
 		return nil, fmt.Errorf("decode embedding: %w", err)
 	}
 	return v, nil
@@ -156,11 +225,11 @@ func (s *SQLiteStore) Insert(ctx context.Context, m *Memory, embedding []float64
 	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO memories (id, type, content, project, importance, access_count,
-			last_accessed_at, created_at, updated_at, source, trust, metadata, embedding)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			last_accessed_at, created_at, updated_at, source, trust, session_id, metadata, embedding)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.ID, string(m.Type), m.Content, m.Project, m.Importance, m.AccessCount,
 		ts(m.LastAccessedAt), ts(m.CreatedAt), ts(m.UpdatedAt), m.Source,
-		string(m.Trust), string(meta), emb)
+		string(m.Trust), m.SessionID, string(meta), emb)
 	if err != nil {
 		return fmt.Errorf("insert memory: %w", err)
 	}
@@ -172,7 +241,7 @@ func (s *SQLiteStore) Update(ctx context.Context, id string, patch UpdatePatch) 
 	// updates when recalls run concurrently.
 	if patch.BumpAccess && patch.Content == nil && patch.Type == nil &&
 		patch.Project == nil && patch.Importance == nil && patch.Trust == nil &&
-		len(patch.Metadata) == 0 {
+		patch.SessionID == nil && len(patch.Metadata) == 0 {
 		now := time.Now().UTC()
 		res, err := s.db.ExecContext(ctx, `
 			UPDATE memories SET access_count = access_count + 1,
@@ -209,6 +278,9 @@ func (s *SQLiteStore) Update(ctx context.Context, id string, patch UpdatePatch) 
 	if patch.Trust != nil {
 		m.Trust = *patch.Trust
 	}
+	if patch.SessionID != nil {
+		m.SessionID = *patch.SessionID
+	}
 	for k, v := range patch.Metadata {
 		if m.Metadata == nil {
 			m.Metadata = map[string]string{}
@@ -226,10 +298,10 @@ func (s *SQLiteStore) Update(ctx context.Context, id string, patch UpdatePatch) 
 	}
 	_, err = s.db.ExecContext(ctx, `
 		UPDATE memories SET type=?, content=?, project=?, importance=?, trust=?,
-			access_count=?, last_accessed_at=?, updated_at=?, metadata=?
+			session_id=?, access_count=?, last_accessed_at=?, updated_at=?, metadata=?
 		WHERE id=?`,
 		string(m.Type), m.Content, m.Project, m.Importance, string(m.Trust),
-		m.AccessCount, ts(m.LastAccessedAt), ts(m.UpdatedAt), string(meta), id)
+		m.SessionID, m.AccessCount, ts(m.LastAccessedAt), ts(m.UpdatedAt), string(meta), id)
 	if err != nil {
 		return fmt.Errorf("update memory: %w", err)
 	}
@@ -255,7 +327,7 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (*Memory, []float64, e
 func (s *SQLiteStore) get(ctx context.Context, id string) (*Memory, []float64, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, type, content, project, importance, access_count,
-			last_accessed_at, created_at, updated_at, source, trust, metadata, embedding
+			last_accessed_at, created_at, updated_at, source, trust, session_id, metadata, embedding
 		FROM memories WHERE id=?`, id)
 	m, emb, err := scanMemory(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -269,7 +341,7 @@ func (s *SQLiteStore) get(ctx context.Context, id string) (*Memory, []float64, e
 
 func (s *SQLiteStore) All(ctx context.Context, project string) ([]*Memory, [][]float64, error) {
 	q := `SELECT id, type, content, project, importance, access_count,
-		last_accessed_at, created_at, updated_at, source, trust, metadata, embedding
+		last_accessed_at, created_at, updated_at, source, trust, session_id, metadata, embedding
 		FROM memories`
 	args := []any{}
 	if project != "" {
@@ -476,6 +548,169 @@ func (s *SQLiteStore) ResolveConflict(ctx context.Context, id, winner string) er
 
 type conflictScanner interface{ Scan(dest ...any) error }
 
+// --- sessions --------------------------------------------------------------
+
+func (s *SQLiteStore) CreateSession(ctx context.Context, sess *Session) error {
+	if sess.ID == "" {
+		sess.ID = NewID()
+	}
+	if sess.StartedAt.IsZero() {
+		sess.StartedAt = time.Now().UTC()
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO sessions (id, project, started_at, ended_at, summary)
+		VALUES (?, ?, ?, NULL, ?)`,
+		sess.ID, sess.Project, ts(sess.StartedAt), sess.Summary)
+	if err != nil {
+		return fmt.Errorf("insert session: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) EndSession(ctx context.Context, id string) error {
+	now := time.Now().UTC()
+	res, err := s.db.ExecContext(ctx, `UPDATE sessions SET ended_at=? WHERE id=? AND ended_at IS NULL`, ts(now), id)
+	if err != nil {
+		return fmt.Errorf("end session: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *SQLiteStore) GetSession(ctx context.Context, id string) (*Session, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, project, started_at, ended_at, summary FROM sessions WHERE id=?`, id)
+	sess, err := scanSession(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get session: %w", err)
+	}
+	return sess, nil
+}
+
+func (s *SQLiteStore) SessionsForProject(ctx context.Context, project string) ([]Session, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, project, started_at, ended_at, summary FROM sessions
+		WHERE project=? ORDER BY started_at DESC`, project)
+	if err != nil {
+		return nil, fmt.Errorf("query sessions: %w", err)
+	}
+	defer rows.Close()
+	var out []Session
+	for rows.Next() {
+		sess, err := scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *sess)
+	}
+	return out, rows.Err()
+}
+
+type sessionScanner interface{ Scan(dest ...any) error }
+
+func scanSession(row sessionScanner) (*Session, error) {
+	var (
+		sess      Session
+		started   string
+		endedNull sql.NullString
+		summ      string
+	)
+	if err := row.Scan(&sess.ID, &sess.Project, &started, &endedNull, &summ); err != nil {
+		return nil, err
+	}
+	sess.StartedAt, _ = time.Parse(time.RFC3339Nano, started)
+	if endedNull.Valid {
+		t, _ := time.Parse(time.RFC3339Nano, endedNull.String)
+		sess.EndedAt = &t
+	}
+	sess.Summary = summ
+	return &sess, nil
+}
+
+// --- topics ----------------------------------------------------------------
+
+func (s *SQLiteStore) AddTopic(ctx context.Context, t *Topic) error {
+	if t.ID == "" {
+		t.ID = NewID()
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO topics (id, name, project) VALUES (?, ?, ?)
+		ON CONFLICT(name, project) DO NOTHING`, t.ID, t.Name, t.Project)
+	if err != nil {
+		return fmt.Errorf("insert topic: %w", err)
+	}
+	// Return the canonical id (ours, or the existing row's).
+	err = s.db.QueryRowContext(ctx,
+		`SELECT id FROM topics WHERE name=? AND project=?`, t.Name, t.Project).Scan(&t.ID)
+	if err != nil {
+		return fmt.Errorf("topic lookup: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) AssignTopic(ctx context.Context, memoryID, topicID string) error {
+	if _, _, err := s.get(ctx, memoryID); err != nil {
+		return fmt.Errorf("topic memory: %w", err)
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO memory_topics (memory_id, topic_id) VALUES (?, ?)
+		ON CONFLICT(memory_id, topic_id) DO NOTHING`, memoryID, topicID)
+	if err != nil {
+		return fmt.Errorf("assign topic: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) TopicsForMemory(ctx context.Context, memoryID string) ([]Topic, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT t.id, t.name, t.project FROM topics t
+		JOIN memory_topics mt ON mt.topic_id = t.id
+		WHERE mt.memory_id = ? ORDER BY t.name`, memoryID)
+	if err != nil {
+		return nil, fmt.Errorf("query topics: %w", err)
+	}
+	defer rows.Close()
+	var out []Topic
+	for rows.Next() {
+		var t Topic
+		if err := rows.Scan(&t.ID, &t.Name, &t.Project); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) MemoriesByTopic(ctx context.Context, topicName, project string) ([]*Memory, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT m.id, m.type, m.content, m.project, m.importance, m.access_count,
+			m.last_accessed_at, m.created_at, m.updated_at, m.source, m.trust,
+			m.session_id, m.metadata, m.embedding
+		FROM memories m
+		JOIN memory_topics mt ON mt.memory_id = m.id
+		JOIN topics t ON t.id = mt.topic_id
+		WHERE t.name = ? AND t.project = ?
+		ORDER BY m.created_at`, topicName, project)
+	if err != nil {
+		return nil, fmt.Errorf("query by topic: %w", err)
+	}
+	defer rows.Close()
+	var out []*Memory
+	for rows.Next() {
+		m, _, err := scanMemory(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 func scanConflict(row conflictScanner) (*Conflict, error) {
 	var (
 		c              Conflict
@@ -500,12 +735,13 @@ type scanner interface{ Scan(dest ...any) error }
 
 func scanMemory(row scanner) (*Memory, []float64, error) {
 	var (
-		m                                                                 Memory
-		typ, project, lastAcc, created, updated, source, trust, meta, emb string
-		accessCount                                                       int
+		m                                                                       Memory
+		typ, project, lastAcc, created, updated, source, trust, sessionID, meta string
+		emb                                                                     []byte
+		accessCount                                                             int
 	)
 	if err := row.Scan(&m.ID, &typ, &m.Content, &project, &m.Importance,
-		&accessCount, &lastAcc, &created, &updated, &source, &trust, &meta, &emb); err != nil {
+		&accessCount, &lastAcc, &created, &updated, &source, &trust, &sessionID, &meta, &emb); err != nil {
 		return nil, nil, err
 	}
 	m.Type = Type(typ)
@@ -516,6 +752,7 @@ func scanMemory(row scanner) (*Memory, []float64, error) {
 	if m.Trust == "" {
 		m.Trust = TrustHigh // pre-M3 rows default to high trust
 	}
+	m.SessionID = sessionID
 	m.LastAccessedAt, _ = time.Parse(time.RFC3339Nano, lastAcc)
 	m.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 	m.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
