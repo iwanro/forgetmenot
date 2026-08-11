@@ -54,6 +54,7 @@ type rememberIn struct {
 	Project    string            `json:"project,omitempty" jsonschema:"project namespace; defaults to global"`
 	Importance float64           `json:"importance,omitempty" jsonschema:"importance 0-1; defaults to 0.5"`
 	Source     string            `json:"source,omitempty" jsonschema:"where this memory came from"`
+	Trust      string            `json:"trust,omitempty" jsonschema:"trust level: high (default) or low for untrusted/external content"`
 	Metadata   map[string]string `json:"metadata,omitempty" jsonschema:"free-form key/value metadata"`
 }
 
@@ -81,6 +82,7 @@ func addRememberTool(server *mcp.Server, svc *memory.Service, opts Options) {
 			Project:    in.Project,
 			Importance: in.Importance,
 			Source:     firstNonEmpty(in.Source, opts.DefaultSrc),
+			Trust:      memory.Trust(in.Trust),
 			Metadata:   in.Metadata,
 		})
 		if err != nil {
@@ -105,6 +107,8 @@ type recallHit struct {
 	Type       string  `json:"type"`
 	Project    string  `json:"project"`
 	Importance float64 `json:"importance"`
+	Source     string  `json:"source,omitempty"`
+	Trust      string  `json:"trust,omitempty"`
 	Score      float64 `json:"score"`
 }
 
@@ -136,6 +140,8 @@ func addRecallTool(server *mcp.Server, svc *memory.Service) {
 				Type:       string(r.Memory.Type),
 				Project:    r.Memory.Project,
 				Importance: r.Memory.Importance,
+				Source:     r.Memory.Source,
+				Trust:      string(r.Memory.Trust),
 				Score:      r.Score,
 			})
 		}
@@ -177,6 +183,7 @@ type updateIn struct {
 	Type       *string           `json:"type,omitempty" jsonschema:"new memory type"`
 	Project    *string           `json:"project,omitempty" jsonschema:"new project namespace"`
 	Importance *float64          `json:"importance,omitempty" jsonschema:"new importance 0-1"`
+	Trust      *string           `json:"trust,omitempty" jsonschema:"new trust level: high or low"`
 	Metadata   map[string]string `json:"metadata,omitempty" jsonschema:"metadata entries to merge"`
 }
 
@@ -203,6 +210,10 @@ func addUpdateTool(server *mcp.Server, svc *memory.Service) {
 		}
 		if in.Importance != nil {
 			patch.Importance = in.Importance
+		}
+		if in.Trust != nil {
+			t := memory.Trust(*in.Trust)
+			patch.Trust = &t
 		}
 		if err := svc.Update(ctx, in.ID, patch); err != nil {
 			if err == memory.ErrNotFound {

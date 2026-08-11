@@ -10,21 +10,24 @@ Agents forget everything between sessions. You re-explain the same context, arch
 
 Positioning: **hygiene + trust** (dedupe, provenance, conflicts, intelligent forgetting) as first-class features, not add-ons. Details in [PRD.md](./PRD.md).
 
-## Features (M2) ✨
+## Features (M3) ✨
 
 - `memory.remember` - store a memory; automatic dedupe + conflict detection
-- `memory.recall` - semantic search with similarity score, project/type filters, hides superseded memories
+- `memory.recall` - semantic search with similarity score, project/type filters, hides superseded memories, returns source + trust
 - `memory.forget` - delete a memory
-- `memory.update` - change content/type/project/importance/metadata
+- `memory.update` - change content/type/project/importance/trust/metadata
 - `memory.link` - relations between memories: `related`, `supersedes`, `part_of`
 - `memory.conflicts` - list open conflicts
 - `memory.resolve_conflict` - pick the winner; the loser becomes superseded
 - `memory.stats` - memory and project counts
 - Memory types: `fact`, `preference`, `decision`, `entity`, `context`, `episode`
+- **Trust levels + sanitization (prompt-injection defense)**: `high`/`low` trust, control-char stripping, content length caps, `[UNTRUSTED]` flags in context
+- **CLAUDE.md bridge**: `bridge export` (context into CLAUDE.md) + `bridge import` (facts from CLAUDE.md)
+- **Memory budget**: `project_context -budget N` keeps session injection bounded
 - Local embeddings (Ollama) or remote (OpenAI-compatible)
 - Pure-Go SQLite: single static binary, no cgo, easy cross-compile
 - CLI: `export`, `import`, `stats`, `list`, `eval`
-- Eval harness with recall@k (20 queries)
+- Eval harness with recall@k (20 queries), JSON output for CI
 
 ## Automatic operation (no manual steps) 🤖
 
@@ -42,19 +45,47 @@ One-time setup in a project:
 forgetmenot setup     # writes .claude/settings.json with the hooks
 ```
 
+## CLAUDE.md bridge
+
+The agent's native memory (CLAUDE.md) stays in sync without manual work:
+
+```bash
+forgetmenot bridge export -path CLAUDE.md -project demo   # write project context into CLAUDE.md
+forgetmenot bridge import -path CLAUDE.md -project demo   # ingest facts section into memory
+```
+
+The export writes a managed `<!-- forgetmenot:context -->` section. The
+import reads bullets from a `<!-- forgetmenot:facts -->` section.
+
 ## CLI
 
 ```bash
-forgetmenot project_context -project demo   # session-start context injection (used by hooks)
-forgetmenot capture -project demo           # session-end capture, reads summary from stdin (used by hooks)
-forgetmenot maintain                        # decay + future compression (cron-friendly)
-forgetmenot setup                           # write Claude Code hooks config
-forgetmenot stats                           # memory + project counts
-forgetmenot list -project demo              # list memories
-forgetmenot export -project demo > mem.json # portable backup (with embeddings)
-forgetmenot import < mem.json               # restore
-forgetmenot eval                            # seed + eval against real embeddings (Ollama)
+forgetmenot project_context -project demo -budget 4000  # session-start context injection (used by hooks)
+forgetmenot capture -project demo                       # session-end capture, reads summary from stdin (used by hooks)
+forgetmenot maintain                                    # decay + future compression (cron-friendly)
+forgetmenot setup                                       # write Claude Code hooks config
+forgetmenot bridge export|import -path CLAUDE.md        # CLAUDE.md sync
+forgetmenot stats                                       # memory + project counts
+forgetmenot list -project demo                          # list memories
+forgetmenot export -project demo > mem.json             # portable backup (with embeddings)
+forgetmenot import < mem.json                           # restore
+forgetmenot eval [-json]                                # seed + eval against real embeddings (Ollama)
 ```
+
+## Benchmark
+
+`forgetmenot eval` runs a fixed 20-query dataset and reports recall@k. The
+dataset and runner live in `internal/eval` so the benchmark is reproducible:
+
+```bash
+forgetmenot eval -embed ollama          # against local Ollama embeddings
+forgetmenot eval -embed openai -embed-url https://api.openai.com/v1 -embed-api-key $KEY
+forgetmenot eval -json                  # machine-readable for CI
+```
+
+The dataset is verified in CI (hermetic bag-of-words embedder): **recall@k =
+100% (20/20)** on the default dataset. Real-model results vary by embedder;
+the same command above produces yours.
 
 ## Install 🚀
 
@@ -140,8 +171,9 @@ internal/eval/      eval harness (recall@k)
 
 - M0 ✅: remember/recall/forget/update/stats, SQLite, embeddings
 - M1 ✅: relations (link/supersedes), conflicts + resolution, CLI, eval harness
-- M2 ✅ (this release): automatic operation (project_context, capture, hooks, agent skill), decay + maintain
-- M3: prompt-injection defense, CLAUDE.md bridge, public benchmark, memory budget, Web UI
+- M2 ✅: automatic operation (project_context, capture, hooks, agent skill), decay + maintain
+- M3 ✅ (this release): trust levels + sanitization, CLAUDE.md bridge, memory budget, public benchmark
+- M4: HTTP/SSE transport, plugins, Web UI, telemetry
 
 ## License
 

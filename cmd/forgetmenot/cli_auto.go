@@ -21,6 +21,7 @@ func cliProjectContextCmd(args []string) int {
 	dbPath := fs.String("db", defaultDBPath(), "path to the SQLite database")
 	project := fs.String("project", "global", "project namespace")
 	limit := fs.Int("limit", 15, "max memories to include")
+	budget := fs.Int("budget", 0, "max characters of output; 0 = unlimited")
 	fs.Parse(args)
 
 	store := openStoreOrDie(*dbPath)
@@ -28,7 +29,7 @@ func cliProjectContextCmd(args []string) int {
 
 	svc := memory.NewService(store, nil)
 	ctx := context.Background()
-	text, _, err := svc.ProjectContext(ctx, *project, *limit)
+	text, _, err := svc.ProjectContext(ctx, *project, *limit, *budget)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "project_context: %v\n", err)
 		return 1

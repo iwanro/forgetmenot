@@ -21,7 +21,7 @@ func TestProjectContextRanksAndGroups(t *testing.T) {
 		Content: "cache layer is Redis", Type: TypeFact, Project: "other",
 	})
 
-	text, mems, err := svc.ProjectContext(ctx, "p", 10)
+	text, mems, err := svc.ProjectContext(ctx, "p", 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestProjectContextExcludesSuperseded(t *testing.T) {
 	if err := svc.Link(ctx, a, b, string(RelationSupersedes)); err != nil {
 		t.Fatal(err)
 	}
-	_, mems, err := svc.ProjectContext(ctx, "p", 10)
+	_, mems, err := svc.ProjectContext(ctx, "p", 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

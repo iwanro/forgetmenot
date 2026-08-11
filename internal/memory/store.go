@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS memories (
     created_at       TEXT NOT NULL,
     updated_at       TEXT NOT NULL,
     source           TEXT NOT NULL DEFAULT '',
+    trust            TEXT NOT NULL DEFAULT 'high',
     metadata         TEXT NOT NULL DEFAULT '{}',
     embedding        TEXT NOT NULL
 );
@@ -76,7 +77,42 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	if err := migrateTrustColumn(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &SQLiteStore{db: db}, nil
+}
+
+// migrateTrustColumn adds the `trust` column to databases created before M3.
+// CREATE TABLE IF NOT EXISTS does not alter existing tables, so databases
+// from M0-M2 need an explicit, idempotent ALTER TABLE.
+func migrateTrustColumn(db *sql.DB) error {
+	ctx := context.Background()
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(memories)`)
+	if err != nil {
+		return fmt.Errorf("migrate: pragma: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			cid       int
+			name, typ string
+			notNull   int
+			dflt      any
+			pk        int
+		)
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			return fmt.Errorf("migrate: pragma scan: %w", err)
+		}
+		if name == "trust" {
+			return nil // already migrated
+		}
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE memories ADD COLUMN trust TEXT NOT NULL DEFAULT 'high'`); err != nil {
+		return fmt.Errorf("migrate: add trust column: %w", err)
+	}
+	return nil
 }
 
 // Close releases the underlying database.
@@ -120,11 +156,11 @@ func (s *SQLiteStore) Insert(ctx context.Context, m *Memory, embedding []float64
 	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO memories (id, type, content, project, importance, access_count,
-			last_accessed_at, created_at, updated_at, source, metadata, embedding)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			last_accessed_at, created_at, updated_at, source, trust, metadata, embedding)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.ID, string(m.Type), m.Content, m.Project, m.Importance, m.AccessCount,
 		ts(m.LastAccessedAt), ts(m.CreatedAt), ts(m.UpdatedAt), m.Source,
-		string(meta), emb)
+		string(m.Trust), string(meta), emb)
 	if err != nil {
 		return fmt.Errorf("insert memory: %w", err)
 	}
@@ -135,7 +171,8 @@ func (s *SQLiteStore) Update(ctx context.Context, id string, patch UpdatePatch) 
 	// Fast path: pure access bump is a single atomic UPDATE, avoiding lost
 	// updates when recalls run concurrently.
 	if patch.BumpAccess && patch.Content == nil && patch.Type == nil &&
-		patch.Project == nil && patch.Importance == nil && len(patch.Metadata) == 0 {
+		patch.Project == nil && patch.Importance == nil && patch.Trust == nil &&
+		len(patch.Metadata) == 0 {
 		now := time.Now().UTC()
 		res, err := s.db.ExecContext(ctx, `
 			UPDATE memories SET access_count = access_count + 1,
@@ -169,6 +206,9 @@ func (s *SQLiteStore) Update(ctx context.Context, id string, patch UpdatePatch) 
 	if patch.Importance != nil {
 		m.Importance = *patch.Importance
 	}
+	if patch.Trust != nil {
+		m.Trust = *patch.Trust
+	}
 	for k, v := range patch.Metadata {
 		if m.Metadata == nil {
 			m.Metadata = map[string]string{}
@@ -185,11 +225,11 @@ func (s *SQLiteStore) Update(ctx context.Context, id string, patch UpdatePatch) 
 		return fmt.Errorf("encode metadata: %w", err)
 	}
 	_, err = s.db.ExecContext(ctx, `
-		UPDATE memories SET type=?, content=?, project=?, importance=?,
+		UPDATE memories SET type=?, content=?, project=?, importance=?, trust=?,
 			access_count=?, last_accessed_at=?, updated_at=?, metadata=?
 		WHERE id=?`,
-		string(m.Type), m.Content, m.Project, m.Importance, m.AccessCount,
-		ts(m.LastAccessedAt), ts(m.UpdatedAt), string(meta), id)
+		string(m.Type), m.Content, m.Project, m.Importance, string(m.Trust),
+		m.AccessCount, ts(m.LastAccessedAt), ts(m.UpdatedAt), string(meta), id)
 	if err != nil {
 		return fmt.Errorf("update memory: %w", err)
 	}
@@ -215,7 +255,7 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (*Memory, []float64, e
 func (s *SQLiteStore) get(ctx context.Context, id string) (*Memory, []float64, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, type, content, project, importance, access_count,
-			last_accessed_at, created_at, updated_at, source, metadata, embedding
+			last_accessed_at, created_at, updated_at, source, trust, metadata, embedding
 		FROM memories WHERE id=?`, id)
 	m, emb, err := scanMemory(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -229,7 +269,7 @@ func (s *SQLiteStore) get(ctx context.Context, id string) (*Memory, []float64, e
 
 func (s *SQLiteStore) All(ctx context.Context, project string) ([]*Memory, [][]float64, error) {
 	q := `SELECT id, type, content, project, importance, access_count,
-		last_accessed_at, created_at, updated_at, source, metadata, embedding
+		last_accessed_at, created_at, updated_at, source, trust, metadata, embedding
 		FROM memories`
 	args := []any{}
 	if project != "" {
@@ -460,18 +500,22 @@ type scanner interface{ Scan(dest ...any) error }
 
 func scanMemory(row scanner) (*Memory, []float64, error) {
 	var (
-		m                                                          Memory
-		typ, project, lastAcc, created, updated, source, meta, emb string
-		accessCount                                                int
+		m                                                                 Memory
+		typ, project, lastAcc, created, updated, source, trust, meta, emb string
+		accessCount                                                       int
 	)
 	if err := row.Scan(&m.ID, &typ, &m.Content, &project, &m.Importance,
-		&accessCount, &lastAcc, &created, &updated, &source, &meta, &emb); err != nil {
+		&accessCount, &lastAcc, &created, &updated, &source, &trust, &meta, &emb); err != nil {
 		return nil, nil, err
 	}
 	m.Type = Type(typ)
 	m.Project = project
 	m.AccessCount = accessCount
 	m.Source = source
+	m.Trust = Trust(trust)
+	if m.Trust == "" {
+		m.Trust = TrustHigh // pre-M3 rows default to high trust
+	}
 	m.LastAccessedAt, _ = time.Parse(time.RFC3339Nano, lastAcc)
 	m.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 	m.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)

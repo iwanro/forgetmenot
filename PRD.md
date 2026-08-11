@@ -367,11 +367,11 @@ Diferențiatorii noștri, în ordinea importanței:
 - [ ] Web UI minimal (browse + edit + conflicte).
 - [ ] SEO/launch: HN, Reddit, X, Product Hunt. Răspuns la toate issues.
 
-### M3 - Încredere + extindere (luna 2-3)
-- [ ] Anti prompt injection: trust levels, sanitizare, surse în rezultate.
-- [ ] Bridge bidirecțional cu memoria nativă (CLAUDE.md, `.claude`, skills).
-- [ ] Benchmark public de calitate a memoriei (eval harness extins + rezultate în README).
-- [ ] Memory budget per sesiune (compresie + prioritizare la injectare).
+### M3 - Încredere + extindere (parțial, 2026-08-11)
+- [x] Anti prompt injection: trust levels (high/low), sanitizare la write (caractere de control, cap de lungime), surse+trust în recall, flag `[UNTRUSTED]` în project_context, migrare DB idempotentă.
+- [x] Bridge bidirecțional cu CLAUDE.md: `bridge export` (context în CLAUDE.md) + `bridge import` (fapte din secțiunea facts), ambele fără embedder.
+- [x] Memory budget per sesiune: `project_context -budget N` (drop de grupuri de prioritate joasă).
+- [x] Benchmark public: `eval -json`, rezultat 100% recall@k (20/20) verificat în CI, secțiune Benchmark în README.
 - [ ] HTTP/SSE transport, sync opțional criptat (P1).
 - [ ] Plugin-uri pentru tipuri de memorie / sink-uri (Notion, Jira).
 - [ ] Integrare Cursor + alte agenți MCP documentate.

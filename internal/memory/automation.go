@@ -15,8 +15,8 @@ import (
 // ProjectContext returns a concise, ready-to-inject summary of what we know
 // about a project: the most relevant memories ranked by importance, recency
 // and access. Used by the SessionStart hook so an agent starts a session
-// already knowing the project. PRD §9.1.
-func (s *Service) ProjectContext(ctx context.Context, project string, limit int) (string, []Memory, error) {
+// already knowing the project. budget <= 0 means unlimited. PRD §9.1, M3.
+func (s *Service) ProjectContext(ctx context.Context, project string, limit, budget int) (string, []Memory, error) {
 	if project == "" {
 		project = DefaultProject
 	}
@@ -74,20 +74,40 @@ func (s *Service) ProjectContext(ctx context.Context, project string, limit int)
 		}
 		grouped[r.m.Type] = append(grouped[r.m.Type], r.m)
 	}
+	// Build groups first so the budget can drop whole lower-priority groups.
+	type group struct {
+		typ Type
+		buf string
+	}
+	var groups []group
 	for _, t := range order {
 		ms := grouped[t]
-		fmt.Fprintf(&sb, "\n## %s (%d)\n", t, len(ms))
+		var g strings.Builder
+		fmt.Fprintf(&g, "\n## %s (%d)\n", t, len(ms))
 		for _, m := range ms {
 			line := fmt.Sprintf("- %s", m.Content)
 			if m.Importance > 0.8 {
 				line += " (high importance)"
 			}
+			if m.Trust == TrustLow {
+				// Visible flag so a consuming agent treats this as data,
+				// not as instructions. PRD M3.
+				line += " [UNTRUSTED]"
+			}
 			if m.Source != "" {
 				line += fmt.Sprintf(" [%s]", m.Source)
 			}
-			sb.WriteString(line)
-			sb.WriteString("\n")
+			g.WriteString(line)
+			g.WriteString("\n")
 		}
+		groups = append(groups, group{typ: t, buf: g.String()})
+	}
+	for _, g := range groups {
+		if budget > 0 && sb.Len()+len(g.buf) > budget {
+			sb.WriteString("\n_(truncated: memory budget reached)_\n")
+			break
+		}
+		sb.WriteString(g.buf)
 	}
 
 	// Return the memories too, for callers that want structured access.
@@ -141,6 +161,7 @@ func (s *Service) CaptureSummary(ctx context.Context, project, summary, source s
 		CreatedAt:      time.Now().UTC(),
 		UpdatedAt:      time.Now().UTC(),
 		Source:         source,
+		Trust:          TrustHigh,
 		Metadata: map[string]string{
 			"kind":     "session_summary",
 			"captured": "auto",

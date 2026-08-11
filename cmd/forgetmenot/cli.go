@@ -22,6 +22,7 @@ type cliExportRecord struct {
 	Project    string            `json:"project"`
 	Importance float64           `json:"importance"`
 	Source     string            `json:"source"`
+	Trust      string            `json:"trust"`
 	Metadata   map[string]string `json:"metadata"`
 	Embedding  []float64         `json:"embedding"`
 }
@@ -36,7 +37,7 @@ type cliExport struct {
 // Returns a process exit code.
 func runCLI(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: forgetmenot <serve|project_context|capture|maintain|setup|export|import|stats|list|eval> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: forgetmenot <serve|project_context|capture|maintain|setup|bridge|export|import|stats|list|eval> [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -58,6 +59,8 @@ func runCLI(args []string) int {
 		return cliMaintainCmd(args[1:])
 	case "setup":
 		return cliSetupCmd(args[1:])
+	case "bridge":
+		return cliBridgeCmd(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", args[0])
 		return 2
@@ -73,6 +76,7 @@ func cliEvalCmd(args []string) int {
 	embedURL := fs.String("embed-url", "", "embedding endpoint base URL")
 	embedModel := fs.String("embed-model", "", "embedding model name")
 	embedAPIKey := fs.String("embed-api-key", "", "API key for the openai provider")
+	jsonOut := fs.Bool("json", false, "print machine-readable JSON result")
 	fs.Parse(args)
 
 	store := openStoreOrDie(*dbPath)
@@ -93,7 +97,16 @@ func cliEvalCmd(args []string) int {
 		fmt.Printf("seeded %d demo facts\n", n)
 	}
 	res := eval.Run(ctx, svc, eval.DefaultDataset)
-	fmt.Print(res.String())
+	if *jsonOut {
+		b, err := json.MarshalIndent(res, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "eval: %v\n", err)
+			return 1
+		}
+		fmt.Println(string(b))
+	} else {
+		fmt.Print(res.String())
+	}
 	if res.RecallAtK < 0.8 {
 		return 1 // low score is a failure signal for CI/manual runs
 	}
@@ -141,6 +154,7 @@ func cliExportTo(args []string, out io.Writer) int {
 			Project:    m.Project,
 			Importance: m.Importance,
 			Source:     m.Source,
+			Trust:      string(m.Trust),
 			Metadata:   m.Metadata,
 			Embedding:  embs[i],
 		})
@@ -179,6 +193,10 @@ func cliImportFrom(args []string, in io.Reader) int {
 	ctx := context.Background()
 	inserted := 0
 	for _, r := range doc.Memories {
+		trust := memory.Trust(r.Trust)
+		if trust == "" {
+			trust = memory.TrustHigh
+		}
 		m := &memory.Memory{
 			ID:         r.ID,
 			Type:       memory.Type(r.Type),
@@ -186,6 +204,7 @@ func cliImportFrom(args []string, in io.Reader) int {
 			Project:    r.Project,
 			Importance: r.Importance,
 			Source:     r.Source,
+			Trust:      trust,
 			Metadata:   r.Metadata,
 		}
 		if m.Project == "" {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -53,6 +54,7 @@ type RememberInput struct {
 	Project    string
 	Importance float64
 	Source     string
+	Trust      Trust // defaults to TrustHigh
 	Metadata   map[string]string
 }
 
@@ -67,11 +69,18 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 	if !ValidTypes[in.Type] {
 		return "", false, fmt.Errorf("invalid memory type %q", in.Type)
 	}
+	in.Content = sanitizeContent(in.Content)
 	if in.Content == "" {
 		return "", false, fmt.Errorf("content is required")
 	}
 	if in.Importance < 0 || in.Importance > 1 {
 		return "", false, fmt.Errorf("importance must be in [0,1], got %v", in.Importance)
+	}
+	if in.Trust == "" {
+		in.Trust = TrustHigh
+	}
+	if in.Trust != TrustHigh && in.Trust != TrustLow {
+		return "", false, fmt.Errorf("invalid trust level %q", in.Trust)
 	}
 	vec, err := s.embedOne(ctx, in.Content)
 	if err != nil {
@@ -120,6 +129,7 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 		CreatedAt:      time.Now().UTC(),
 		UpdatedAt:      time.Now().UTC(),
 		Source:         in.Source,
+		Trust:          in.Trust,
 		Metadata:       in.Metadata,
 	}
 	if m.Importance == 0 {
@@ -207,6 +217,16 @@ func (s *Service) Update(ctx context.Context, id string, patch UpdatePatch) erro
 	if patch.Type != nil && !ValidTypes[*patch.Type] {
 		return fmt.Errorf("invalid memory type %q", *patch.Type)
 	}
+	if patch.Trust != nil && *patch.Trust != TrustHigh && *patch.Trust != TrustLow {
+		return fmt.Errorf("invalid trust level %q", *patch.Trust)
+	}
+	if patch.Content != nil {
+		c := sanitizeContent(*patch.Content)
+		if c == "" {
+			return fmt.Errorf("content is required")
+		}
+		patch.Content = &c
+	}
 	return s.Store.Update(ctx, id, patch)
 }
 
@@ -267,6 +287,29 @@ func (s *Service) embedOne(ctx context.Context, text string) ([]float64, error) 
 		return nil, fmt.Errorf("expected 1 embedding, got %d", len(vecs))
 	}
 	return vecs[0], nil
+}
+
+// sanitizeContent strips control characters (keeping \n and \t), collapses
+// stray null bytes, and caps length. This limits both context-injection
+// surface and junk bytes in embeddings.
+func sanitizeContent(s string) string {
+	if len(s) > MaxContentLen {
+		s = s[:MaxContentLen]
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch r {
+		case '\n', '\t':
+			b.WriteRune(r)
+		default:
+			if r < 0x20 || r == 0x7f {
+				continue // drop control chars
+			}
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // Cosine returns cosine similarity between two vectors. Zero-length vectors

@@ -32,6 +32,20 @@ var ValidTypes = map[Type]bool{
 // DefaultProject is used when no explicit project namespace is given.
 const DefaultProject = "global"
 
+// Trust marks how much a memory should be trusted when its content is fed to
+// an LLM. PRD M3: memories can be a prompt-injection vector, so low-trust
+// content must be visibly flagged in recall and injection points.
+type Trust string
+
+const (
+	TrustHigh Trust = "high" // explicit user/agent input; safe to treat as instructions-adjacent
+	TrustLow  Trust = "low"  // auto-captured or external content; treat as data, not instructions
+)
+
+// MaxContentLen caps how much content a single memory can hold, both to keep
+// memories focused and to bound context-injection surface.
+const MaxContentLen = 4000
+
 // Memory is a single stored memory entry. Embeddings are kept out of the
 // struct on purpose: they live on the storage side and are managed by the
 // core service, not exposed to tool handlers.
@@ -46,6 +60,7 @@ type Memory struct {
 	CreatedAt      time.Time         `json:"created_at"`
 	UpdatedAt      time.Time         `json:"updated_at"`
 	Source         string            `json:"source"`
+	Trust          Trust             `json:"trust"`
 	Metadata       map[string]string `json:"metadata"`
 }
 
@@ -55,6 +70,7 @@ type UpdatePatch struct {
 	Type       *Type
 	Project    *string
 	Importance *float64
+	Trust      *Trust
 	Metadata   map[string]string // merged into existing metadata
 	// BumpAccess signals recall: access_count+1 and last_accessed_at=now.
 	BumpAccess bool
