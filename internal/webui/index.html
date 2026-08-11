@@ -68,13 +68,22 @@ function meta(m) {
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>switchView(b.dataset.view));
 function switchView(v){ current=v; document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active', b.dataset.view===v)); render(); }
 
+// curr returns the current value of an input, if it exists.
+function curr(id){ const el = $(id); return el ? el.value : ''; }
+
 function filters(){
-  const p = current==='timeline' ? `<input id="topic" placeholder="topic (empty = all)">` : '';
-  return `<div class="filters"><input id="project" placeholder="project (default global)"><input id="q" placeholder="search...">${p}<button onclick="render()">Refresh</button></div>`;
+  const p = current==='timeline'
+    ? `<input id="topic" placeholder="topic (empty = all)" value="${esc(curr('topic'))}">`
+    : '';
+  return `<div class="filters">
+    <input id="project" placeholder="project (default global)" value="${esc(curr('project'))}">
+    <input id="q" placeholder="search..." value="${esc(curr('q'))}">${p}
+    <button onclick="render()">Refresh</button>
+  </div>`;
 }
 
 async function render(){
-  const project = (()=>{ const el=$('#project'); return el?el.value:''; })();
+  const project = curr('project');
   if (current==='memories') return renderMemories(project);
   if (current==='timeline') return renderTimeline(project);
   if (current==='conflicts') return renderConflicts();
