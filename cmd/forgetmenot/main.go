@@ -22,8 +22,8 @@ import (
 var version = "dev"
 
 func main() {
-	// Subcommands: export, import, stats, list, eval, project_context, capture,
-	// maintain, setup. Everything else is the MCP server (serve is the default).
+	// Subcommands (CLI) dispatch to runCLI. Anything else is the MCP server
+	// (serve is the default).
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "export", "import", "stats", "list", "eval", "project_context", "capture", "maintain", "setup", "bridge", "remember", "session", "timeline", "export-md", "web", "summarize", "doctor":

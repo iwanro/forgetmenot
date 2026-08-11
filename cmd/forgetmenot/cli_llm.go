@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -56,7 +57,7 @@ func cliSummarizeCmd(args []string) int {
 	return 0
 }
 
-// cliDoctorCmd diagnoses the local setup: DB, Ollama reachability, hooks.
+// cliDoctorCmd diagnoses the local setup: DB, embeddings endpoint, hooks.
 func cliDoctorCmd(args []string) int {
 	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
 	dbPath := fs.String("db", defaultDBPath(), "path to the SQLite database")
@@ -83,10 +84,10 @@ func cliDoctorCmd(args []string) int {
 	defer store.Close()
 	check("database "+*dbPath, nil)
 
-	// Embeddings endpoint reachable (Ollama default).
-	em := embed.NewOllama(*embedURL, "nomic-embed-text")
-	_, err = em.Embed(context.Background(), []string{"ping"})
-	check("embedding endpoint (Ollama)", err)
+	// Embeddings endpoint reachable. We only probe reachability, not a
+	// specific model: Ollama's /api/tags answers with the installed models
+	// even when nomic-embed-text is not pulled, so this avoids false FAILs.
+	check("embedding endpoint", checkEmbedReachable(*embedURL))
 
 	// Current session marker.
 	svc := memory.NewService(store, nil)
@@ -111,4 +112,25 @@ func cliDoctorCmd(args []string) int {
 	}
 	fmt.Println("\ndoctor: all checks passed.")
 	return 0
+}
+
+// checkEmbedReachable probes the Ollama /api/tags endpoint to confirm the
+// embedding service is up, independent of which models are installed.
+func checkEmbedReachable(baseURL string) error {
+	em := embed.NewOllama(baseURL, "unused-model") // model irrelevant for reachability
+	req, err := http.NewRequest(http.MethodGet, em.BaseURL+"/api/tags", nil)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := http.DefaultClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return fmt.Errorf("endpoint not reachable: %w", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("endpoint returned status %d", resp.StatusCode)
+	}
+	return nil
 }
