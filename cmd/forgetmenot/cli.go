@@ -23,6 +23,8 @@ type cliExportRecord struct {
 	Importance float64           `json:"importance"`
 	Source     string            `json:"source"`
 	Trust      string            `json:"trust"`
+	SessionID  string            `json:"session_id,omitempty"`
+	Topics     []string          `json:"topics,omitempty"`
 	Metadata   map[string]string `json:"metadata"`
 	Embedding  []float64         `json:"embedding"`
 }
@@ -151,12 +153,26 @@ func cliExportTo(args []string, out io.Writer) int {
 		fmt.Fprintf(os.Stderr, "export: %v\n", err)
 		return 1
 	}
+	// Load topics for all memories in one query.
+	ids := make([]string, 0, len(mems))
+	for _, m := range mems {
+		ids = append(ids, m.ID)
+	}
+	topicsByID, err := store.TopicsForMemories(ctx, ids)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "export: %v\n", err)
+		return 1
+	}
 	outExport := cliExport{
 		Version:    1,
 		ExportedAt: time.Now().UTC().Format(time.RFC3339),
 		Memories:   make([]cliExportRecord, 0, len(mems)),
 	}
 	for i, m := range mems {
+		names := make([]string, 0, len(topicsByID[m.ID]))
+		for _, t := range topicsByID[m.ID] {
+			names = append(names, t.Name)
+		}
 		outExport.Memories = append(outExport.Memories, cliExportRecord{
 			ID:         m.ID,
 			Type:       string(m.Type),
@@ -165,6 +181,8 @@ func cliExportTo(args []string, out io.Writer) int {
 			Importance: m.Importance,
 			Source:     m.Source,
 			Trust:      string(m.Trust),
+			SessionID:  m.SessionID,
+			Topics:     names,
 			Metadata:   m.Metadata,
 			Embedding:  embs[i],
 		})
@@ -226,6 +244,7 @@ func cliImportFrom(args []string, in io.Reader) int {
 			Importance: r.Importance,
 			Source:     r.Source,
 			Trust:      trust,
+			SessionID:  r.SessionID,
 			Metadata:   r.Metadata,
 		}
 		if m.Project == "" {
@@ -239,6 +258,13 @@ func cliImportFrom(args []string, in io.Reader) int {
 		if err := store.Insert(ctx, m, r.Embedding); err != nil {
 			fmt.Fprintf(os.Stderr, "import: insert %s: %v\n", r.ID, err)
 			return 1
+		}
+		if len(r.Topics) > 0 {
+			svc := memory.NewService(store, nil)
+			if err := svc.AssignTopics(ctx, m.ID, m.Project, r.Topics); err != nil {
+				fmt.Fprintf(os.Stderr, "import: topics %s: %v\n", r.ID, err)
+				return 1
+			}
 		}
 		inserted++
 	}

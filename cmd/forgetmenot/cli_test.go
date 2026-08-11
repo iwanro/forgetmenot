@@ -30,9 +30,14 @@ func TestCLIExportImportRoundTrip(t *testing.T) {
 		Content:    "we chose SQLite over Postgres for local tests",
 		Project:    "repo-a",
 		Importance: 0.9,
+		SessionID:  "sess1234567890abcdef",
 		Metadata:   map[string]string{"status": "active"},
 	}
 	if err := store.Insert(ctx, m, []float64{0.1, 0.2, 0.3}); err != nil {
+		t.Fatal(err)
+	}
+	svc := memory.NewService(store, nil)
+	if err := svc.AssignTopics(ctx, m.ID, "repo-a", []string{"db", "choice"}); err != nil {
 		t.Fatal(err)
 	}
 	store.Close()
@@ -69,6 +74,14 @@ func TestCLIExportImportRoundTrip(t *testing.T) {
 	}
 	if got.Metadata["status"] != "active" {
 		t.Fatalf("metadata lost: %+v", got.Metadata)
+	}
+	if got.SessionID != "sess1234567890abcdef" {
+		t.Fatalf("session_id lost: %q", got.SessionID)
+	}
+	svc2 := memory.NewService(store2, nil)
+	topics, err := svc2.Store.TopicsForMemory(ctx, "exp1")
+	if err != nil || len(topics) != 2 {
+		t.Fatalf("topics lost after import: %+v, %v", topics, err)
 	}
 	if len(emb) != 3 || math.Abs(emb[0]-0.1) > 1e-6 {
 		t.Fatalf("embedding lost: %v", emb)

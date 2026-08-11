@@ -263,11 +263,11 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		Summary   string `json:"summary"`
 	}
 	out := make([]sessionView, 0, len(sessions))
-	for _, s := range sessions {
-		v := sessionView{ID: s.ID, Project: s.Project,
-			StartedAt: s.StartedAt.UTC().Format("2006-01-02T15:04:05Z"), Summary: s.Summary}
-		if s.EndedAt != nil {
-			v.EndedAt = s.EndedAt.UTC().Format("2006-01-02T15:04:05Z")
+	for _, sess := range sessions {
+		v := sessionView{ID: sess.ID, Project: sess.Project,
+			StartedAt: sess.StartedAt.UTC().Format("2006-01-02T15:04:05Z"), Summary: sess.Summary}
+		if sess.EndedAt != nil {
+			v.EndedAt = sess.EndedAt.UTC().Format("2006-01-02T15:04:05Z")
 		}
 		out = append(out, v)
 	}

@@ -569,8 +569,14 @@ func (s *SQLiteStore) CreateSession(ctx context.Context, sess *Session) error {
 }
 
 func (s *SQLiteStore) EndSession(ctx context.Context, id string) error {
+	return s.EndSessionWithSummary(ctx, id, "")
+}
+
+func (s *SQLiteStore) EndSessionWithSummary(ctx context.Context, id, summary string) error {
 	now := time.Now().UTC()
-	res, err := s.db.ExecContext(ctx, `UPDATE sessions SET ended_at=? WHERE id=? AND ended_at IS NULL`, ts(now), id)
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET ended_at=?, summary=? WHERE id=? AND ended_at IS NULL`,
+		ts(now), summary, id)
 	if err != nil {
 		return fmt.Errorf("end session: %w", err)
 	}

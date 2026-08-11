@@ -160,7 +160,7 @@ func TestServiceSessionAttachment(t *testing.T) {
 	if m.SessionID != sess.ID {
 		t.Fatalf("session not attached: got %q want %q", m.SessionID, sess.ID)
 	}
-	if err := svc.EndSession(ctx, ""); err != nil {
+	if err := svc.EndSession(ctx, "", ""); err != nil {
 		t.Fatal(err)
 	}
 }

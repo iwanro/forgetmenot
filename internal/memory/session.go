@@ -50,8 +50,9 @@ func (s *Service) StartSession(ctx context.Context, project string) (*Session, e
 	return sess, nil
 }
 
-// EndSession ends the current session (by marker) or the given id.
-func (s *Service) EndSession(ctx context.Context, id string) error {
+// EndSession ends the current session (by marker) or the given id. An
+// optional summary (e.g. the session capture) is stored on the session.
+func (s *Service) EndSession(ctx context.Context, id, summary string) error {
 	if id == "" {
 		cur, err := s.readCurrentSession()
 		if err != nil {
@@ -59,7 +60,7 @@ func (s *Service) EndSession(ctx context.Context, id string) error {
 		}
 		id = cur.ID
 	}
-	if err := s.Store.EndSession(ctx, id); err != nil {
+	if err := s.Store.EndSessionWithSummary(ctx, id, summary); err != nil {
 		return err
 	}
 	_ = s.clearCurrentSession()

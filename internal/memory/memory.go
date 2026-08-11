@@ -182,6 +182,7 @@ type Store interface {
 	// topic correlation.
 	CreateSession(ctx context.Context, s *Session) error
 	EndSession(ctx context.Context, id string) error
+	EndSessionWithSummary(ctx context.Context, id, summary string) error
 	GetSession(ctx context.Context, id string) (*Session, error)
 	SessionsForProject(ctx context.Context, project string) ([]Session, error)
 

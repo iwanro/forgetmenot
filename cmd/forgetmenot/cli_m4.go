@@ -55,6 +55,7 @@ func cliSessionStart(args []string) int {
 func cliSessionEnd(args []string) int {
 	fs := flag.NewFlagSet("session end", flag.ExitOnError)
 	dbPath := fs.String("db", defaultDBPath(), "path to the SQLite database")
+	summary := fs.String("summary", "", "optional session summary to store on the session")
 	fs.Parse(args)
 
 	store := openStoreOrDie(*dbPath)
@@ -62,7 +63,7 @@ func cliSessionEnd(args []string) int {
 	svc := memory.NewService(store, nil)
 	svc.SetDBPath(*dbPath)
 
-	if err := svc.EndSession(context.Background(), ""); err != nil {
+	if err := svc.EndSession(context.Background(), "", *summary); err != nil {
 		fmt.Fprintf(os.Stderr, "session end: %v\n", err)
 		return 1
 	}
@@ -117,9 +118,7 @@ func cliTimelineCmd(args []string) int {
 		fmt.Fprintf(os.Stderr, "timeline: %v\n", err)
 		return 1
 	}
-	fmt.Printf("# Timeline%s%s (%d entries)\n\n",
-		map[bool]string{true: " for topic: " + *topic, false: ""}[*topic != ""],
-		map[bool]string{true: " in " + *project, false: ""}[*project != ""], len(entries))
+	fmt.Printf("# Timeline%s (%d entries)\n\n", timelineTitle(*topic, *project), len(entries))
 	for _, e := range entries {
 		when := e.Memory.CreatedAt.UTC().Format("2006-01-02 15:04")
 		sess := ""
@@ -136,6 +135,19 @@ func cliTimelineCmd(args []string) int {
 		fmt.Println(line)
 	}
 	return 0
+}
+
+func timelineTitle(topic, project string) string {
+	switch {
+	case topic != "" && project != "":
+		return " for topic: " + topic + " in " + project
+	case topic != "":
+		return " for topic: " + topic
+	case project != "":
+		return " in " + project
+	default:
+		return ""
+	}
 }
 
 // --- export-md --------------------------------------------------------------
@@ -178,6 +190,15 @@ func exportMarkdown(ctx context.Context, svc *memory.Service, project string) (s
 	if err != nil {
 		return "", err
 	}
+	// Load topics for all memories in one query.
+	ids := make([]string, 0, len(mems))
+	for _, m := range mems {
+		ids = append(ids, m.ID)
+	}
+	topicsByID, err := svc.Store.TopicsForMemories(ctx, ids)
+	if err != nil {
+		return "", err
+	}
 	// Group by type, ordered by creation.
 	groups := map[memory.Type][]*memory.Memory{}
 	var order []memory.Type
@@ -204,6 +225,13 @@ func exportMarkdown(ctx context.Context, svc *memory.Service, project string) (s
 			}
 			if m.SessionID != "" {
 				meta += " · session `" + m.SessionID[:8] + "`"
+			}
+			if topics := topicsByID[m.ID]; len(topics) > 0 {
+				names := make([]string, 0, len(topics))
+				for _, tp := range topics {
+					names = append(names, tp.Name)
+				}
+				meta += " · topics: " + strings.Join(names, ", ")
 			}
 			fmt.Fprintf(&sb, "- %s\n  %s\n", m.Content, meta)
 		}
