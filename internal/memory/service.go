@@ -160,22 +160,30 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 	if err := s.Store.Insert(ctx, m, vec); err != nil {
 		return "", false, err
 	}
+	// Everything below is post-processing. The memory is already stored, so
+	// none of these failures may roll back the write: we record them in
+	// metadata instead of returning an error (which would lie about the
+	// memory not being saved).
+	noteErr := func(key string, err error) {
+		if err != nil {
+			_ = s.Store.Update(ctx, m.ID, UpdatePatch{Metadata: map[string]string{key: err.Error()}})
+		}
+	}
 	for _, other := range conflictIDs {
 		_, _ = s.Store.CreateConflict(ctx, other, m.ID)
 	}
 	if len(in.Topics) > 0 {
 		if err := s.AssignTopics(ctx, m.ID, m.Project, in.Topics); err != nil {
-			return "", false, err
+			noteErr("topics_error", err)
 		}
 	}
 	if in.AutoTopics && s.LLM != nil {
 		topics, err := s.AutoTopics(ctx, m.Content, m.Project)
 		if err != nil {
-			return "", false, err
-		}
-		if len(topics) > 0 {
+			noteErr("auto_topics_error", err)
+		} else if len(topics) > 0 {
 			if err := s.AssignTopics(ctx, m.ID, m.Project, topics); err != nil {
-				return "", false, err
+				noteErr("topics_error", err)
 			}
 		}
 	}

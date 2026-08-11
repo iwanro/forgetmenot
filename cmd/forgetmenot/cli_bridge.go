@@ -282,15 +282,14 @@ func cliRememberCmd(args []string) int {
 			fmt.Fprintln(os.Stderr, "remember: -auto-topics needs -llm ollama or -llm openai")
 			return 2
 		}
+		// The memory is already stored; a failing LLM must not make the
+		// command report failure for a memory that was saved.
 		extracted, err := svc.AutoTopics(context.Background(), m.Content, *project)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "remember: %v\n", err)
-			return 1
-		}
-		if len(extracted) > 0 {
+			fmt.Fprintf(os.Stderr, "remember: warning: auto topics skipped: %v\n", err)
+		} else if len(extracted) > 0 {
 			if err := svc.AssignTopics(context.Background(), m.ID, *project, extracted); err != nil {
-				fmt.Fprintf(os.Stderr, "remember: %v\n", err)
-				return 1
+				fmt.Fprintf(os.Stderr, "remember: warning: topics not assigned: %v\n", err)
 			}
 		}
 	}
