@@ -32,7 +32,7 @@ Positioning: **hygiene + trust** (dedupe, provenance, conflicts, intelligent for
 - **Sessions**: memories grouped per agent session; `session start/end/list`
 - **Topics**: subject labels for cross-session correlation
 - **Markdown export**: `export-md` writes human/AI-readable `.md` per project
-- **LLM auto-topics**: `remember -auto-topics` extracts topic labels with Ollama or OpenAI
+- **LLM auto-topics**: `remember -auto-topics` extracts topic labels with Ollama, OpenAI or Anthropic (Claude)
 - **Project summarization**: `summarize` compresses stale sessions into a context summary (memory hygiene)
 - **Doctor**: `forgetmenot doctor` diagnoses DB, embeddings, hooks and active session
 - **Web UI**: `forgetmenot web` serves a local browser dashboard (memories, timeline, conflicts, sessions) from the same binary
@@ -181,6 +181,20 @@ forgetmenot -embed openai -embed-url https://api.openai.com/v1 -embed-api-key $O
 ```bash
 forgetmenot -embed lexical   # deterministic lexical embeddings, no network at all
 ```
+
+### LLM features (auto-topics, summarize)
+
+The optional chat provider for topic extraction and session summarization is
+independent of embeddings and supports Ollama, any OpenAI-compatible endpoint
+and the Anthropic Messages API:
+
+```bash
+forgetmenot -llm anthropic -llm-api-key $ANTHROPIC_API_KEY              # Claude
+forgetmenot -llm openai -llm-url https://api.openai.com/v1 -llm-api-key $KEY
+forgetmenot -llm ollama                                                 # local, default model llama3.2
+```
+
+`-llm-model` overrides the default per provider.
 
 ## Agent setup (any MCP client)
 

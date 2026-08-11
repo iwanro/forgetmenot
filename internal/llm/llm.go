@@ -1,6 +1,7 @@
 // Package llm provides a minimal chat client for LLM-powered memory features:
-// auto topic extraction and project summarization. Supports Ollama and any
-// OpenAI-compatible endpoint. Optional: nil client disables LLM features.
+// auto topic extraction and project summarization. Supports Ollama, any
+// OpenAI-compatible endpoint and the Anthropic Messages API. Optional: nil
+// client disables LLM features.
 package llm
 
 import (
@@ -139,6 +140,86 @@ func (o *OpenAICompatClient) Chat(ctx context.Context, system, user string) (str
 		return "", fmt.Errorf("openai-compat chat: no choices")
 	}
 	return out.Choices[0].Message.Content, nil
+}
+
+// AnthropicClient talks to the Anthropic Messages API (/v1/messages). Any
+// Anthropic-compatible endpoint (api.anthropic.com, Bedrock/Vertex proxies,
+// self-hosted gateways) works through the same client.
+type AnthropicClient struct {
+	BaseURL   string
+	APIKey    string
+	Model     string
+	MaxTokens int
+}
+
+// NewAnthropic returns an Anthropic client with defaults. A small fast model
+// is chosen: topic extraction and summarization are short JSON tasks.
+func NewAnthropic(baseURL, apiKey, model string) *AnthropicClient {
+	if baseURL == "" {
+		baseURL = "https://api.anthropic.com"
+	}
+	if model == "" {
+		model = "claude-3-5-haiku-latest"
+	}
+	return &AnthropicClient{
+		BaseURL:   strings.TrimRight(baseURL, "/"),
+		APIKey:    apiKey,
+		Model:     model,
+		MaxTokens: 1024,
+	}
+}
+
+func (a *AnthropicClient) Chat(ctx context.Context, system, user string) (string, error) {
+	body, err := json.Marshal(map[string]any{
+		"model":      a.Model,
+		"max_tokens": a.MaxTokens,
+		"system":     system,
+		"messages":   []map[string]string{{"role": "user", "content": user}},
+	})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.BaseURL+"/v1/messages", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", a.APIKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("anthropic chat: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		// Anthropic errors carry a human-readable message in the body.
+		var apiErr struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		msg := string(b)
+		if json.Unmarshal(b, &apiErr) == nil && apiErr.Error.Message != "" {
+			msg = apiErr.Error.Message
+		}
+		return "", fmt.Errorf("anthropic chat: status %d: %s", resp.StatusCode, msg)
+	}
+	var out struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("anthropic chat decode: %w", err)
+	}
+	for _, block := range out.Content {
+		if block.Type == "text" && strings.TrimSpace(block.Text) != "" {
+			return block.Text, nil
+		}
+	}
+	return "", fmt.Errorf("anthropic chat: no text content in response")
 }
 
 // ChatJSON asks the model to return a JSON object and decodes it into v.

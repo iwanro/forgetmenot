@@ -416,7 +416,8 @@ Diferențiatorii noștri, în ordinea importanței:
 - [x] Threshold-uri calibrate pe scala lexicală (dedupe/conflict/recall floor).
 - [x] `forgetmenot recall` (CLI): mirror al tool-ului MCP `memory.recall`, funcționează offline.
 - [x] `doctor` aware de mod: auto → warn (fallback activ), strict → FAIL, lexical → ok fără endpoint.
-- [x] Teste: 93 (lexical determinism/sim, auto fallback+recovery, recall heal, integrare MCP fără embedding service).
+- [x] Client LLM Anthropic-compatibil (`-llm anthropic`): Messages API `/v1/messages` pentru auto-topics + summarize (alături de Ollama și OpenAI-compat).
+- [x] Teste: 100 (lexical determinism/sim, auto fallback+recovery, recall heal, CLI dispatch regression, MCP integrare fără embeddings, Anthropic client).
 
 ## 13. Decizii deschise (TBD)
 

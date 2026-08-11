@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,5 +161,58 @@ func TestCLIRememberRequiresContent(t *testing.T) {
 	db := filepath.Join(dir, "rem2.db")
 	if code := runCLI([]string{"remember", "-db", db, "-content", "  "}); code == 0 {
 		t.Fatal("expected non-zero exit for empty content")
+	}
+}
+
+// TestCLIRememberAutoTopicsAnthropic verifies -llm anthropic routes to the
+// Anthropic Messages API client end-to-end: remember extracts topic labels
+// from an Anthropic-compatible endpoint and assigns them to the memory.
+func TestCLIRememberAutoTopicsAnthropic(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/messages" || r.Header.Get("x-api-key") != "sk-test" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"content": []map[string]any{{"type": "text", "text": `{"topics":["auth","security"]}`}},
+		})
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	db := filepath.Join(dir, "rem.db")
+	code := runCLI([]string{
+		"remember", "-db", db, "-content", "we chose JWT for sessions",
+		"-type", "decision", "-project", "p",
+		"-auto-topics", "-llm", "anthropic", "-llm-url", srv.URL, "-llm-api-key", "sk-test",
+	})
+	if code != 0 {
+		t.Fatalf("remember exit %d", code)
+	}
+	store := openStoreOrDie(db)
+	defer store.Close()
+	mems, _, _ := store.All(t.Context(), "p")
+	if len(mems) != 1 {
+		t.Fatalf("stored %d memories, want 1", len(mems))
+	}
+	topics, err := store.TopicsForMemory(t.Context(), mems[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(topics) != 2 || topics[0].Name != "auth" {
+		t.Fatalf("topics = %+v, want [auth security]", topics)
+	}
+}
+
+// TestCLIRememberAutoTopicsRejectsUnknownLLM guards the -llm validation.
+func TestCLIRememberAutoTopicsRejectsUnknownLLM(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "rem.db")
+	code := runCLI([]string{
+		"remember", "-db", db, "-content", "x", "-auto-topics", "-llm", "bogus",
+	})
+	if code == 0 {
+		t.Fatal("expected non-zero exit for unknown llm provider")
 	}
 }

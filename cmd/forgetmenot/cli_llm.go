@@ -20,6 +20,8 @@ func buildLLM(kind, url, model, apiKey string) llm.Client {
 		return llm.NewOllama(url, model)
 	case "openai":
 		return llm.NewOpenAICompat(url, apiKey, model)
+	case "anthropic":
+		return llm.NewAnthropic(url, apiKey, model)
 	default:
 		return nil
 	}
@@ -32,10 +34,10 @@ func cliSummarizeCmd(args []string) int {
 	dbPath := fs.String("db", defaultDBPath(), "path to the SQLite database")
 	project := fs.String("project", "global", "project namespace")
 	olderThan := fs.Duration("older-than", 7*24*time.Hour, "summarize episodes not accessed for this long")
-	llmKind := fs.String("llm", "ollama", "chat provider: ollama | openai")
+	llmKind := fs.String("llm", "ollama", "chat provider: ollama | openai | anthropic")
 	llmURL := fs.String("llm-url", "", "chat endpoint base URL")
 	llmModel := fs.String("llm-model", "", "chat model name")
-	llmKey := fs.String("llm-api-key", "", "API key for openai provider")
+	llmKey := fs.String("llm-api-key", "", "API key for the chat provider")
 	fs.Parse(args)
 
 	store := openStoreOrDie(*dbPath)
@@ -44,7 +46,7 @@ func cliSummarizeCmd(args []string) int {
 	svc.SetDBPath(*dbPath)
 	svc.LLM = buildLLM(*llmKind, *llmURL, *llmModel, *llmKey)
 	if svc.LLM == nil {
-		fmt.Fprintln(os.Stderr, "summarize: unknown -llm provider (want ollama or openai)")
+		fmt.Fprintln(os.Stderr, "summarize: unknown -llm provider (want ollama, openai or anthropic)")
 		return 2
 	}
 

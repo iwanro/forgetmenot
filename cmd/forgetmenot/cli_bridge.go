@@ -214,10 +214,10 @@ func cliRememberCmd(args []string) int {
 	topics := fs.String("topics", "", "comma-separated topic labels")
 	autoTopics := fs.Bool("auto-topics", false, "extract topic labels with the LLM")
 	session := fs.String("session", "", "session id to attach (default: current session)")
-	llmKind := fs.String("llm", "", "chat provider for auto topics: ollama | openai")
+	llmKind := fs.String("llm", "", "chat provider for auto topics: ollama | openai | anthropic")
 	llmURL := fs.String("llm-url", "", "chat endpoint base URL")
 	llmModel := fs.String("llm-model", "", "chat model name")
-	llmKey := fs.String("llm-api-key", "", "API key for the openai chat provider")
+	llmKey := fs.String("llm-api-key", "", "API key for the chat provider")
 	fs.Parse(args)
 
 	if strings.TrimSpace(*content) == "" {
@@ -279,7 +279,7 @@ func cliRememberCmd(args []string) int {
 		svc := memory.NewService(store, nil)
 		svc.LLM = buildLLM(*llmKind, *llmURL, *llmModel, *llmKey)
 		if svc.LLM == nil {
-			fmt.Fprintln(os.Stderr, "remember: -auto-topics needs -llm ollama or -llm openai")
+			fmt.Fprintln(os.Stderr, "remember: -auto-topics needs -llm ollama, openai or anthropic")
 			return 2
 		}
 		// The memory is already stored; a failing LLM must not make the
