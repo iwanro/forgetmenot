@@ -137,3 +137,23 @@ func TestCLIImportRejectsInvalidType(t *testing.T) {
 		t.Fatal("expected non-zero exit for invalid memory type")
 	}
 }
+
+func TestCLIDoctorDBOpen(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "doc.db")
+	// A valid DB should pass the database check; the Ollama check will fail
+	// (no server), which is fine - we just want no crash and exit code 1.
+	code := runCLI([]string{"doctor", "-db", db, "-embed-url", "http://127.0.0.1:1"})
+	if code == 0 {
+		t.Fatal("expected non-zero exit (embedding endpoint unreachable)")
+	}
+}
+
+func TestCLISummarizeNoLLM(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "sum.db")
+	code := runCLI([]string{"summarize", "-db", db, "-project", "p", "-llm", "bogus"})
+	if code == 0 {
+		t.Fatal("expected non-zero exit for unknown llm provider")
+	}
+}

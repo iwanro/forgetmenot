@@ -17,7 +17,7 @@ Agents forget everything between sessions. You re-explain the same context, arch
 
 Positioning: **hygiene + trust** (dedupe, provenance, conflicts, intelligent forgetting) as first-class features, not add-ons. Details in [PRD.md](./PRD.md).
 
-## Features (M5) ✨
+## Features (v0.3) ✨
 
 - `memory.remember` - store a memory; automatic dedupe + conflict detection + topic labels
 - `memory.recall` - semantic search with similarity score, project/type filters, hides superseded memories, returns source + trust
@@ -32,6 +32,9 @@ Positioning: **hygiene + trust** (dedupe, provenance, conflicts, intelligent for
 - **Sessions**: memories grouped per agent session; `session start/end/list`
 - **Topics**: subject labels for cross-session correlation
 - **Markdown export**: `export-md` writes human/AI-readable `.md` per project
+- **LLM auto-topics**: `remember -auto-topics` extracts topic labels with Ollama or OpenAI
+- **Project summarization**: `summarize` compresses stale sessions into a context summary (memory hygiene)
+- **Doctor**: `forgetmenot doctor` diagnoses DB, embeddings, hooks and active session
 - **Web UI**: `forgetmenot web` serves a local browser dashboard (memories, timeline, conflicts, sessions) from the same binary
 - **Compact embeddings**: binary float32 BLOB (legacy JSON auto-migrated)
 - **Trust levels + sanitization** (prompt-injection defense)
@@ -103,6 +106,8 @@ forgetmenot setup                                      # write Claude Code hooks
 forgetmenot bridge export|import -path CLAUDE.md       # CLAUDE.md sync
 forgetmenot export-md -project demo                    # human/AI-readable markdown
 forgetmenot web -addr 127.0.0.1:8090                  # local browser dashboard
+forgetmenot summarize -project demo -llm ollama        # compress stale sessions
+forgetmenot doctor                                     # diagnose setup
 forgetmenot stats                                      # memory + project counts
 forgetmenot list -project demo                         # list memories
 forgetmenot export -project demo > mem.json            # portable backup (with embeddings)
@@ -212,7 +217,8 @@ internal/eval/      eval harness (recall@k)
 - M2 ✅: automatic operation (project_context, capture, hooks, agent skill), decay + maintain
 - M3 ✅: trust levels + sanitization, CLAUDE.md bridge, memory budget, public benchmark
 - M4 ✅: sessions, topics, timeline correlation, markdown export, compact embeddings
-- M5 ✅ (this release): Web UI dashboard, topics in recall
+- M5 ✅: Web UI dashboard, topics in recall
+- v0.3 ✅ (this release): LLM auto-topics + summarize, doctor, release automation
 - M6: HTTP/SSE transport, plugins, telemetry
 
 ## License

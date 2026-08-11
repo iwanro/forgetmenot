@@ -212,7 +212,12 @@ func cliRememberCmd(args []string) int {
 	importance := fs.Float64("importance", 0.5, "importance 0-1")
 	trust := fs.String("trust", "high", "trust level: high or low")
 	topics := fs.String("topics", "", "comma-separated topic labels")
+	autoTopics := fs.Bool("auto-topics", false, "extract topic labels with the LLM")
 	session := fs.String("session", "", "session id to attach (default: current session)")
+	llmKind := fs.String("llm", "", "chat provider for auto topics: ollama | openai")
+	llmURL := fs.String("llm-url", "", "chat endpoint base URL")
+	llmModel := fs.String("llm-model", "", "chat model name")
+	llmKey := fs.String("llm-api-key", "", "API key for the openai chat provider")
 	fs.Parse(args)
 
 	if strings.TrimSpace(*content) == "" {
@@ -265,6 +270,25 @@ func cliRememberCmd(args []string) int {
 		if len(names) > 0 {
 			svc := memory.NewService(store, nil)
 			if err := svc.AssignTopics(context.Background(), m.ID, *project, names); err != nil {
+				fmt.Fprintf(os.Stderr, "remember: %v\n", err)
+				return 1
+			}
+		}
+	}
+	if *autoTopics {
+		svc := memory.NewService(store, nil)
+		svc.LLM = buildLLM(*llmKind, *llmURL, *llmModel, *llmKey)
+		if svc.LLM == nil {
+			fmt.Fprintln(os.Stderr, "remember: -auto-topics needs -llm ollama or -llm openai")
+			return 2
+		}
+		extracted, err := svc.AutoTopics(context.Background(), m.Content, *project)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "remember: %v\n", err)
+			return 1
+		}
+		if len(extracted) > 0 {
+			if err := svc.AssignTopics(context.Background(), m.ID, *project, extracted); err != nil {
 				fmt.Fprintf(os.Stderr, "remember: %v\n", err)
 				return 1
 			}

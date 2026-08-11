@@ -39,7 +39,7 @@ type cliExport struct {
 // Returns a process exit code.
 func runCLI(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: forgetmenot <serve|remember|capture|session|timeline|project_context|maintain|setup|bridge|export-md|web|export|import|stats|list|eval> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: forgetmenot <serve|remember|capture|session|timeline|project_context|maintain|setup|bridge|export-md|web|summarize|doctor|export|import|stats|list|eval> [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -73,6 +73,10 @@ func runCLI(args []string) int {
 		return cliExportMdCmd(args[1:])
 	case "web":
 		return cliWebCmd(args[1:])
+	case "summarize":
+		return cliSummarizeCmd(args[1:])
+	case "doctor":
+		return cliDoctorCmd(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", args[0])
 		return 2

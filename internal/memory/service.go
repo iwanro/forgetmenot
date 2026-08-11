@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/iwanro/forgetmenot/internal/llm"
 )
 
 // Embedder turns text into embedding vectors. Implementations: OllamaEmbedder
@@ -23,6 +25,7 @@ type Embedder interface {
 type Service struct {
 	Store    Store
 	Embedder Embedder
+	LLM      llm.Client // optional; nil disables auto-topics/summarize
 
 	// dbPathOverride places the current-session marker next to the DB.
 	dbPathOverride string
@@ -64,6 +67,7 @@ type RememberInput struct {
 	Trust      Trust  // defaults to TrustHigh
 	SessionID  string // optional; falls back to the current-session marker
 	Topics     []string
+	AutoTopics bool // extract topics with the LLM (requires s.LLM)
 	Metadata   map[string]string
 }
 
@@ -162,6 +166,17 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 	if len(in.Topics) > 0 {
 		if err := s.AssignTopics(ctx, m.ID, m.Project, in.Topics); err != nil {
 			return "", false, err
+		}
+	}
+	if in.AutoTopics && s.LLM != nil {
+		topics, err := s.AutoTopics(ctx, m.Content, m.Project)
+		if err != nil {
+			return "", false, err
+		}
+		if len(topics) > 0 {
+			if err := s.AssignTopics(ctx, m.ID, m.Project, topics); err != nil {
+				return "", false, err
+			}
 		}
 	}
 	return m.ID, true, nil

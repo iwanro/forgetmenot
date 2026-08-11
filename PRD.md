@@ -397,6 +397,17 @@ Diferențiatorii noștri, în ordinea importanței:
 - [ ] Plugin-uri / sink-uri (Notion, Jira) (P1).
 - [ ] Telemetrie opt-in (P1).
 
+
+### v0.3 - LLM features + tooling (2026-08-11)
+- [x] internal/llm: client Ollama + OpenAI-compat, ChatJSON (fence-tolerant), teste.
+- [x] Auto-topics la remember (-auto-topics, LLM): etichete extrase automat.
+- [x] SummarizeProject: compresie episoade vechi → summary context (LLM).
+- [x] `forgetmenot doctor`: diagnostic DB, embeddings, hooks, sesiune.
+- [x] Release automation: goreleaser (4 platforme, static) + workflow pe tag.
+- [ ] Sync criptat opțional (P1).
+- [ ] Plugin-uri / sink-uri (Notion, Jira) (P1).
+- [ ] Telemetrie opt-in (P1).
+
 ## 13. Decizii deschise (TBD)
 
 1. ~~Limbaj de implementare~~: **ales: Go** (binary static unic, zero dependențe, SDK MCP oficial `modelcontextprotocol/go-sdk`, SQLite pure-Go fără cgo; embeddings prin HTTP către Ollama local sau API remote).

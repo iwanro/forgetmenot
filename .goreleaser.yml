@@ -1,0 +1,51 @@
+# goreleaser configuration: builds static binaries for all platforms on tag.
+# Triggered by .github/workflows/release.yml. Local check: goreleaser check
+version: 2
+
+project_name: forgetmenot
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: forgetmenot
+    main: ./cmd/forgetmenot
+    binary: forgetmenot
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: default
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: iwanro
+    name: forgetmenot
+  prerelease: auto

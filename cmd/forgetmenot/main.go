@@ -18,12 +18,15 @@ import (
 	"github.com/iwanro/forgetmenot/internal/memory"
 )
 
+// version is injected at build time by goreleaser (-X main.version=...).
+var version = "dev"
+
 func main() {
 	// Subcommands: export, import, stats, list, eval, project_context, capture,
 	// maintain, setup. Everything else is the MCP server (serve is the default).
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-		case "export", "import", "stats", "list", "eval", "project_context", "capture", "maintain", "setup", "bridge", "remember", "session", "timeline", "export-md", "web":
+		case "export", "import", "stats", "list", "eval", "project_context", "capture", "maintain", "setup", "bridge", "remember", "session", "timeline", "export-md", "web", "summarize", "doctor":
 			os.Exit(runCLI(os.Args[1:]))
 		}
 	}
@@ -34,12 +37,16 @@ func main() {
 		embedURL    = flag.String("embed-url", "", "embedding endpoint base URL (default: Ollama localhost:11434)")
 		embedModel  = flag.String("embed-model", "", "embedding model name (default: nomic-embed-text)")
 		embedAPIKey = flag.String("embed-api-key", "", "API key for the openai provider")
-		version     = flag.Bool("version", false, "print version and exit")
+		llmKind     = flag.String("llm", "", "chat provider for auto-topics/summarize: ollama | openai (empty disables)")
+		llmURL      = flag.String("llm-url", "", "chat endpoint base URL")
+		llmModel    = flag.String("llm-model", "", "chat model name")
+		llmAPIKey   = flag.String("llm-api-key", "", "API key for the openai chat provider")
+		showVersion = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
 
-	if *version {
-		log.Printf("forgetmenot %s", "v0.1.0")
+	if *showVersion {
+		log.Printf("forgetmenot %s", version)
 		return
 	}
 
@@ -56,11 +63,12 @@ func main() {
 
 	svc := memory.NewService(store, em)
 	svc.SetDBPath(*dbPath)
+	svc.LLM = buildLLM(*llmKind, *llmURL, *llmModel, *llmAPIKey)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := mcpserver.Run(ctx, svc, mcpserver.Options{Name: "forgetmenot", Version: "v0.1.0"}); err != nil {
+	if err := mcpserver.Run(ctx, svc, mcpserver.Options{Name: "forgetmenot", Version: version}); err != nil {
 		log.Fatalf("mcp server: %v", err)
 	}
 }
