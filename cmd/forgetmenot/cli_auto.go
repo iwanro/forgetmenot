@@ -116,6 +116,7 @@ func cliSetupTo(args []string) int {
 	dbPath := fs.String("db", defaultDBPath(), "path to the SQLite memory database (written into the hook commands)")
 	project := fs.String("project", "", "project namespace for hooks; empty = derive from git? use global")
 	target := fs.String("out", ".claude/settings.json", "path to write the Claude Code settings")
+	mcpOut := fs.String("mcp", "", "path to write a generic .mcp.json for ANY MCP client (opencode, Cursor, Codex...); uses the absolute binary path so no $PATH setup is needed")
 	fs.Parse(args)
 
 	bin, err := os.Executable()
@@ -157,7 +158,48 @@ func cliSetupTo(args []string) int {
 		return 1
 	}
 	fmt.Printf("wrote %s\n", *target)
+
+	if *mcpOut != "" {
+		if err := os.MkdirAll(filepath.Dir(*mcpOut), 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "setup: %v\n", err)
+			return 1
+		}
+		if err := writeMCPSettings(*mcpOut, absBin); err != nil {
+			fmt.Fprintf(os.Stderr, "setup: %v\n", err)
+			return 1
+		}
+		fmt.Printf("wrote %s (absolute path: %s)\n", *mcpOut, absBin)
+	}
 	return 0
+}
+
+// writeMCPSettings merges the forgetmenot server entry into an MCP client
+// config (.mcp.json for opencode/Cursor/Codex, or ~/.claude.json for Claude
+// Code). Other servers are preserved. The command is the absolute binary
+// path, so agents work even when forgetmenot is not on $PATH.
+func writeMCPSettings(path, bin string) error {
+	existing := map[string]any{}
+	if b, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(b, &existing); err != nil {
+			return fmt.Errorf("existing %s is not valid JSON: %w", path, err)
+		}
+	}
+	servers := map[string]any{}
+	if cur, ok := existing["mcpServers"].(map[string]any); ok {
+		for k, v := range cur {
+			servers[k] = v
+		}
+	}
+	servers["forgetmenot"] = map[string]any{
+		"command": bin,
+		"args":    []string{},
+	}
+	existing["mcpServers"] = servers
+	b, err := json.MarshalIndent(existing, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(b, '\n'), 0o644)
 }
 
 // shellJoin quotes each argument for /bin/sh and joins them with spaces.

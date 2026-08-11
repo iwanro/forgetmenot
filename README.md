@@ -106,6 +106,7 @@ forgetmenot project_context -project demo -budget 4000 # session-start context i
 forgetmenot capture -project demo                      # session-end capture, reads summary from stdin (used by hooks)
 forgetmenot maintain                                   # decay + future compression (cron-friendly)
 forgetmenot setup                                      # write Claude Code hooks config
+forgetmenot setup -mcp .mcp.json                       # write .mcp.json for ANY agent (absolute path)
 forgetmenot bridge export|import -path CLAUDE.md       # CLAUDE.md sync
 forgetmenot export-md -project demo                    # human/AI-readable markdown
 forgetmenot web -addr 127.0.0.1:8090                  # local browser dashboard
@@ -198,8 +199,16 @@ forgetmenot -llm ollama                                                 # local,
 
 ## Agent setup (any MCP client)
 
-Add the server to `~/.claude.json`, `.mcp.json` in your project, or your
-agent's MCP config (opencode, Cursor, Codex...):
+One command writes a ready-to-use `.mcp.json` for ANY MCP client (opencode,
+Cursor, Codex, Claude Code...). It uses the absolute binary path, so it works
+even when forgetmenot is not on `$PATH`:
+
+```bash
+forgetmenot setup -mcp .mcp.json
+```
+
+Or add the server manually to `~/.claude.json`, `.mcp.json` in your project,
+or your agent's MCP config:
 
 ```json
 {
@@ -216,9 +225,11 @@ No Ollama, no API key, no PATH tricks required: the default `auto` mode makes
 `memory.remember` and `memory.recall` work out of the box.
 
 If `forgetmenot` is not in `$PATH`, use the absolute path to the binary (or
-run `go install github.com/iwanro/forgetmenot/cmd/forgetmenot@latest`). The
-database is created automatically at `$XDG_DATA_HOME/forgetmenot/memory.db`
-(default `~/.local/share/forgetmenot/memory.db`). Override with `-db`.
+run `go install github.com/iwanro/forgetmenot/cmd/forgetmenot@latest`; the
+`setup -mcp` command handles this automatically). `forgetmenot doctor` warns
+when the binary is not on `$PATH`. The database is created automatically at
+`$XDG_DATA_HOME/forgetmenot/memory.db` (default
+`~/.local/share/forgetmenot/memory.db`). Override with `-db`.
 
 ## Usage 💬
 

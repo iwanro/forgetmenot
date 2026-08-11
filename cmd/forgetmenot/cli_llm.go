@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/iwanro/forgetmenot/internal/embed"
@@ -122,6 +123,16 @@ func cliDoctorCmd(args []string) int {
 		fmt.Println("[ok]   .claude/settings.json present (hooks configured)")
 	} else {
 		fmt.Println("[warn] .claude/settings.json missing - run `forgetmenot setup`")
+	}
+
+	// Binary reachable by name. Agents start MCP servers with
+	// `command: forgetmenot`; if the binary is not on $PATH that fails. The
+	// common case is `go install` putting it in ~/go/bin with ~/go/bin not on
+	// $PATH - fixable with `forgetmenot setup -mcp .mcp.json`.
+	if _, err := exec.LookPath("forgetmenot"); err != nil {
+		fmt.Println("[warn] forgetmenot not on $PATH - MCP clients using `command: forgetmenot` will fail to start it; run `forgetmenot setup -mcp .mcp.json` (writes an absolute path) or add the binary's directory to $PATH")
+	} else {
+		fmt.Println("[ok]   forgetmenot on $PATH (agents can use `command: forgetmenot`)")
 	}
 
 	if !ok {

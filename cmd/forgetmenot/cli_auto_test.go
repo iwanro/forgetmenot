@@ -166,3 +166,76 @@ func TestShellJoin(t *testing.T) {
 		t.Fatalf("shellJoin = %q, want %q", got, want)
 	}
 }
+
+// TestCLISetupWritesMCPConfig verifies `setup -mcp` writes a generic
+// .mcp.json for any MCP client using the ABSOLUTE binary path, so agents work
+// even when forgetmenot is not on $PATH (the opencode failure mode).
+func TestCLISetupWritesMCPConfig(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, ".mcp.json")
+
+	if code := cliSetupTo([]string{"-db", "/tmp/x.db", "-out", filepath.Join(dir, ".claude", "settings.json"), "-mcp", out}); code != 0 {
+		t.Fatalf("setup exit %d", code)
+	}
+	b, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Servers map[string]struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		t.Fatalf(".mcp.json not valid JSON: %v\n%s", err, b)
+	}
+	srv, ok := cfg.Servers["forgetmenot"]
+	if !ok {
+		t.Fatalf("forgetmenot server missing:\n%s", b)
+	}
+	if !filepath.IsAbs(srv.Command) {
+		t.Fatalf("command %q is not absolute (this is the whole point):\n%s", srv.Command, b)
+	}
+	if len(srv.Args) != 0 {
+		t.Fatalf("args = %v, want []", srv.Args)
+	}
+}
+
+// TestCLISetupMCPPreservesOtherServers merges, not clobbers.
+func TestCLISetupMCPPreservesOtherServers(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, ".mcp.json")
+	_ = os.WriteFile(out, []byte(`{
+  "mcpServers": {
+    "github": {"command": "gh-mcp", "args": []}
+  }
+}`), 0o644)
+
+	if code := cliSetupTo([]string{"-db", "/tmp/x.db", "-mcp", out}); code != 0 {
+		t.Fatalf("setup exit %d", code)
+	}
+	b, _ := os.ReadFile(out)
+	var cfg map[string]any
+	_ = json.Unmarshal(b, &cfg)
+	servers, ok := cfg["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcpServers missing:\n%s", b)
+	}
+	if _, ok := servers["github"]; !ok {
+		t.Fatalf("existing github server clobbered:\n%s", b)
+	}
+	if _, ok := servers["forgetmenot"]; !ok {
+		t.Fatalf("forgetmenot missing after merge:\n%s", b)
+	}
+}
+
+// TestWriteMCPSettingsInvalidJSON surfaces corrupt config instead of silently
+// overwriting the user's file.
+func TestWriteMCPSettingsInvalidJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".mcp.json")
+	_ = os.WriteFile(path, []byte("not json"), 0o644)
+	if err := writeMCPSettings(path, "/abs/bin/forgetmenot"); err == nil {
+		t.Fatal("expected error for invalid existing .mcp.json")
+	}
+}

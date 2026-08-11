@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "command": "'/home/iwan/AI_PROJ/agent-memory/bin/forgetmenot' 'session' 'start' '-db' '/home/iwan/.local/share/forgetmenot/memory.db' '-project' 'global'"
+      },
+      {
+        "command": "'/home/iwan/AI_PROJ/agent-memory/bin/forgetmenot' 'project_context' '-db' '/home/iwan/.local/share/forgetmenot/memory.db' '-project' 'global'"
+      }
+    ],
+    "Stop": [
+      {
+        "command": "'/home/iwan/AI_PROJ/agent-memory/bin/forgetmenot' 'capture' '-db' '/home/iwan/.local/share/forgetmenot/memory.db' '-project' 'global' '-source' 'claude-code'"
+      },
+      {
+        "command": "'/home/iwan/AI_PROJ/agent-memory/bin/forgetmenot' 'session' 'end' '-db' '/home/iwan/.local/share/forgetmenot/memory.db'"
+      }
+    ]
+  }
+}
