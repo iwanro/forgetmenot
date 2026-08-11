@@ -417,9 +417,11 @@ Diferențiatorii noștri, în ordinea importanței:
 - [x] `forgetmenot recall` (CLI): mirror al tool-ului MCP `memory.recall`, funcționează offline.
 - [x] `doctor` aware de mod: auto → warn (fallback activ), strict → FAIL, lexical → ok fără endpoint.
 - [x] Client LLM Anthropic-compatibil (`-llm anthropic`): Messages API `/v1/messages` pentru auto-topics + summarize (alături de Ollama și OpenAI-compat).
-- [x] `setup -mcp .mcp.json`: scrie config MCP generic pentru orice agent cu calea absolută a binarului (rezolvă „forgetmenot nu e pe \$PATH" - scenariul opencode); merge fără să șteargă alți servere.
+- [x] `setup -mcp .mcp.json`: scrie config MCP generic pentru orice agent cu calea absolută a binarului (rezolvă „forgetmenot nu e pe \$PATH" - scenariul opencode); merge fără să șteargă alți servere; bake-uiește și `-db` ca hook-urile (agenti și hooks citesc aceeași bază).
 - [x] `doctor`: avertizează când binarul nu e pe \$PATH (`command: forgetmenot` ar eșua).
-- [x] Teste: 103 (lexical determinism/sim, auto fallback+recovery, recall heal, CLI dispatch regression, MCP integrare fără embeddings, Anthropic client, setup -mcp).
+- [x] Review fix: `NewAnthropic` tolerează base URL care se termină în `/v1` (fără `/v1/v1/messages`).
+- [x] Review fix: AutoEmbedder citește `primaryUp` sub lock (fără race); verificat cu `go test -race`.
+- [x] Teste: 105 (lexical determinism/sim, auto fallback+recovery, recall heal, CLI dispatch regression, MCP integrare fără embeddings, Anthropic client + /v1, setup -mcp + -db).
 
 ## 13. Decizii deschise (TBD)
 

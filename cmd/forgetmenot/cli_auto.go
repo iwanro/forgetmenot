@@ -164,7 +164,7 @@ func cliSetupTo(args []string) int {
 			fmt.Fprintf(os.Stderr, "setup: %v\n", err)
 			return 1
 		}
-		if err := writeMCPSettings(*mcpOut, absBin); err != nil {
+		if err := writeMCPSettings(*mcpOut, absBin, *dbPath); err != nil {
 			fmt.Fprintf(os.Stderr, "setup: %v\n", err)
 			return 1
 		}
@@ -176,8 +176,10 @@ func cliSetupTo(args []string) int {
 // writeMCPSettings merges the forgetmenot server entry into an MCP client
 // config (.mcp.json for opencode/Cursor/Codex, or ~/.claude.json for Claude
 // Code). Other servers are preserved. The command is the absolute binary
-// path, so agents work even when forgetmenot is not on $PATH.
-func writeMCPSettings(path, bin string) error {
+// path, so agents work even when forgetmenot is not on $PATH, and the same
+// -db the hooks use is baked into args so agents and hooks share one
+// database.
+func writeMCPSettings(path, bin, dbPath string) error {
 	existing := map[string]any{}
 	if b, err := os.ReadFile(path); err == nil {
 		if err := json.Unmarshal(b, &existing); err != nil {
@@ -192,7 +194,7 @@ func writeMCPSettings(path, bin string) error {
 	}
 	servers["forgetmenot"] = map[string]any{
 		"command": bin,
-		"args":    []string{},
+		"args":    []string{"-db", dbPath},
 	}
 	existing["mcpServers"] = servers
 	b, err := json.MarshalIndent(existing, "", "  ")

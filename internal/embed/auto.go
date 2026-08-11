@@ -52,6 +52,7 @@ func (a *AutoEmbedder) Embed(ctx context.Context, texts []string) ([][]float64, 
 	a.mu.Lock()
 	now := time.Now()
 	shouldTry := a.primaryUp || now.After(a.retryAt)
+	probing := !a.primaryUp
 	a.mu.Unlock()
 	if !shouldTry {
 		return a.fallback.Embed(ctx, texts)
@@ -59,7 +60,7 @@ func (a *AutoEmbedder) Embed(ctx context.Context, texts []string) ([][]float64, 
 
 	// Probing a previously-dead primary: cap the wait so a blackholed
 	// endpoint cannot stall an agent call for the full 60s client timeout.
-	if !a.primaryUp {
+	if probing {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, a.probeTime)
 		defer cancel()

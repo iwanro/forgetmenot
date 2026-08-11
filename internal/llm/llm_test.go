@@ -185,3 +185,32 @@ func TestAnthropicClientNoText(t *testing.T) {
 		t.Fatal("expected error when no text content block is present")
 	}
 }
+
+// TestAnthropicBaseURLToleratesV1 guards against /v1/v1/messages: users pass
+// base URLs ending in /v1 (the OpenAI convention), which must not double the
+// path segment.
+func TestAnthropicBaseURLToleratesV1(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"content": []map[string]any{{"type": "text", "text": "ok"}},
+		})
+	}))
+	defer srv.Close()
+
+	// Both bare base and base+/v1 must reach /v1/messages.
+	for _, base := range []string{srv.URL, srv.URL + "/v1", srv.URL + "/v1/"} {
+		c := NewAnthropic(base, "k", "claude-test")
+		got, err := c.Chat(context.Background(), "s", "u")
+		if err != nil {
+			t.Fatalf("base %q: %v", base, err)
+		}
+		if got != "ok" {
+			t.Fatalf("base %q: reply = %q", base, got)
+		}
+	}
+}

@@ -200,8 +200,9 @@ forgetmenot -llm ollama                                                 # local,
 ## Agent setup (any MCP client)
 
 One command writes a ready-to-use `.mcp.json` for ANY MCP client (opencode,
-Cursor, Codex, Claude Code...). It uses the absolute binary path, so it works
-even when forgetmenot is not on `$PATH`:
+Cursor, Codex, Claude Code...). It uses the absolute binary path (no `$PATH`
+needed) and bakes in the same `-db` the hooks use, so agents and hooks share
+one database:
 
 ```bash
 forgetmenot setup -mcp .mcp.json

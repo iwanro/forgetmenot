@@ -197,8 +197,22 @@ func TestCLISetupWritesMCPConfig(t *testing.T) {
 	if !filepath.IsAbs(srv.Command) {
 		t.Fatalf("command %q is not absolute (this is the whole point):\n%s", srv.Command, b)
 	}
-	if len(srv.Args) != 0 {
-		t.Fatalf("args = %v, want []", srv.Args)
+	if len(srv.Args) != 2 || srv.Args[0] != "-db" || srv.Args[1] != "/tmp/x.db" {
+		t.Fatalf("args = %v, want [-db /tmp/x.db] (agents and hooks must share one database)", srv.Args)
+	}
+}
+
+// TestCLISetupMCPBakesDBPath verifies a custom -db survives into the MCP
+// config, so the agent server and the Claude hooks read the SAME database
+// even when the default path is overridden.
+func TestCLISetupMCPBakesDBPath(t *testing.T) {
+	out := filepath.Join(t.TempDir(), ".mcp.json")
+	if code := cliSetupTo([]string{"-db", "/custom/memory.db", "-mcp", out}); code != 0 {
+		t.Fatalf("setup exit %d", code)
+	}
+	b, _ := os.ReadFile(out)
+	if !strings.Contains(string(b), "/custom/memory.db") {
+		t.Fatalf("custom -db not baked into .mcp.json:\n%s", b)
 	}
 }
 
@@ -235,7 +249,7 @@ func TestCLISetupMCPPreservesOtherServers(t *testing.T) {
 func TestWriteMCPSettingsInvalidJSON(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".mcp.json")
 	_ = os.WriteFile(path, []byte("not json"), 0o644)
-	if err := writeMCPSettings(path, "/abs/bin/forgetmenot"); err == nil {
+	if err := writeMCPSettings(path, "/abs/bin/forgetmenot", "/tmp/x.db"); err == nil {
 		t.Fatal("expected error for invalid existing .mcp.json")
 	}
 }

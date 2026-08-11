@@ -158,6 +158,9 @@ func NewAnthropic(baseURL, apiKey, model string) *AnthropicClient {
 	if baseURL == "" {
 		baseURL = "https://api.anthropic.com"
 	}
+	// Tolerate both "https://api.anthropic.com" and "https://api.anthropic.com/v1"
+	// (the OpenAI convention users are used to) without building /v1/v1/messages.
+	baseURL = strings.TrimSuffix(strings.TrimRight(baseURL, "/"), "/v1")
 	if model == "" {
 		model = "claude-3-5-haiku-latest"
 	}
