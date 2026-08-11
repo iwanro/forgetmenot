@@ -77,17 +77,20 @@ func (s *Service) CurrentSessionID() string {
 }
 
 // Timeline returns the memories about a topic (or all project memories when
-// topic is empty) across sessions, oldest first, with session context.
+// topic is empty) across sessions, oldest first, with session context. The
+// topic is normalized the same way AssignTopics stores it (lowercased,
+// trimmed), so "Auth" and " auth " find the "auth" timeline.
 func (s *Service) Timeline(ctx context.Context, project, topic string, limit int) ([]TimelineEntry, error) {
 	if limit <= 0 {
 		limit = 50
 	}
+	topic = strings.ToLower(strings.TrimSpace(topic))
 	var mems []*Memory
 	var err error
 	if topic != "" {
 		mems, err = s.Store.MemoriesByTopic(ctx, topic, project)
 	} else {
-		all, _, err2 := s.Store.All(ctx, project)
+		all, err2 := s.Store.AllMeta(ctx, project)
 		if err2 != nil {
 			return nil, err2
 		}

@@ -48,12 +48,12 @@ func (s *Service) AutoTopics(ctx context.Context, content, project string) ([]st
 // tagged with the project's topics. Returns the summary text.
 func (s *Service) SummarizeProject(ctx context.Context, project string, olderThan time.Duration) (string, error) {
 	if s.LLM == nil {
-		return "", fmt.Errorf("no LLM configured (use -llm ollama or -llm openai)")
+		return "", fmt.Errorf("no LLM configured (use -llm ollama, openai or anthropic)")
 	}
 	if olderThan <= 0 {
 		olderThan = 7 * 24 * time.Hour
 	}
-	mems, _, err := s.Store.All(ctx, project)
+	mems, err := s.Store.AllMeta(ctx, project)
 	if err != nil {
 		return "", err
 	}

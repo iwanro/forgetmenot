@@ -395,6 +395,36 @@ func (s *SQLiteStore) All(ctx context.Context, project string) ([]*Memory, [][]f
 	return mems, embs, rows.Err()
 }
 
+// AllMeta returns every memory in a project ("" = all) WITHOUT decoding the
+// embedding BLOBs. Use it for read paths that only need memory fields
+// (project_context, list, export-md, decay, timeline...): skipping the vector
+// decode saves tens of MB and keeps the SessionStart hook fast at scale.
+func (s *SQLiteStore) AllMeta(ctx context.Context, project string) ([]*Memory, error) {
+	q := `SELECT id, type, content, project, importance, access_count,
+		last_accessed_at, created_at, updated_at, source, trust, session_id, metadata
+		FROM memories`
+	args := []any{}
+	if project != "" {
+		q += ` WHERE project=?`
+		args = append(args, project)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query memories: %w", err)
+	}
+	defer rows.Close()
+
+	var mems []*Memory
+	for rows.Next() {
+		m, err := scanMemoryMeta(rows)
+		if err != nil {
+			return nil, err
+		}
+		mems = append(mems, m)
+	}
+	return mems, rows.Err()
+}
+
 func (s *SQLiteStore) Count(ctx context.Context, project string) (int, error) {
 	q := `SELECT COUNT(*) FROM memories`
 	args := []any{}
@@ -811,6 +841,34 @@ func scanMemory(row scanner) (*Memory, []float64, error) {
 		&accessCount, &lastAcc, &created, &updated, &source, &trust, &sessionID, &meta, &emb); err != nil {
 		return nil, nil, err
 	}
+	if err := applyMemoryRow(&m, typ, project, lastAcc, created, updated, source, trust, sessionID, meta, accessCount); err != nil {
+		return nil, nil, err
+	}
+	embedding, err := decodeEmbedding(emb)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &m, embedding, nil
+}
+
+// scanMemoryMeta is the AllMeta variant: same fields, no embedding column.
+func scanMemoryMeta(row scanner) (*Memory, error) {
+	var (
+		m                                                                       Memory
+		typ, project, lastAcc, created, updated, source, trust, sessionID, meta string
+		accessCount                                                             int
+	)
+	if err := row.Scan(&m.ID, &typ, &m.Content, &project, &m.Importance,
+		&accessCount, &lastAcc, &created, &updated, &source, &trust, &sessionID, &meta); err != nil {
+		return nil, err
+	}
+	if err := applyMemoryRow(&m, typ, project, lastAcc, created, updated, source, trust, sessionID, meta, accessCount); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+func applyMemoryRow(m *Memory, typ, project, lastAcc, created, updated, source, trust, sessionID, meta string, accessCount int) error {
 	m.Type = Type(typ)
 	m.Project = project
 	m.AccessCount = accessCount
@@ -824,13 +882,9 @@ func scanMemory(row scanner) (*Memory, []float64, error) {
 	m.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 	m.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
 	if err := json.Unmarshal([]byte(meta), &m.Metadata); err != nil {
-		return nil, nil, fmt.Errorf("decode metadata: %w", err)
+		return fmt.Errorf("decode metadata: %w", err)
 	}
-	embedding, err := decodeEmbedding(emb)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &m, embedding, nil
+	return nil
 }
 
 // ErrNotFound is returned when a memory ID does not exist.

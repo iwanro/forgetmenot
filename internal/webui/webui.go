@@ -89,7 +89,7 @@ func (s *Server) view(m *memory.Memory, topics []memory.Topic) memoryView {
 
 func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request) {
 	project := r.URL.Query().Get("project")
-	mems, _, err := s.svc.Store.All(r.Context(), project)
+	mems, err := s.svc.Store.AllMeta(r.Context(), project)
 	if err != nil {
 		s.writeErr(w, 500, err.Error())
 		return
@@ -169,7 +169,7 @@ func (s *Server) handleConflicts(w http.ResponseWriter, r *http.Request) {
 		ContentB string `json:"content_b"`
 	}
 	content := map[string]string{}
-	if mems, _, err := s.svc.Store.All(r.Context(), ""); err == nil {
+	if mems, err := s.svc.Store.AllMeta(r.Context(), ""); err == nil {
 		for _, m := range mems {
 			content[m.ID] = m.Content
 		}

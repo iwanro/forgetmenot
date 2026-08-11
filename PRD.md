@@ -476,3 +476,10 @@ User:  De fapt, am migrat DB-ul pe SQLite pentru testele locale.
 Agent: ⚠ Conflict detectat: "DB Postgres 16" vs "DB SQLite (teste locale)". 
        Confirmi că SQLite o înlocuiește pe Postgres? (da / nu)
 ```
+
+### v0.5.3 - Review complet al codebase-ului (2026-08-11)
+- [x] `AllMeta`: citiri metadata-only fără decodarea BLOB-urilor de embeddings (project_context, decay, list, export-md, timeline, conflicts, webui, bridge import). SessionStart hook-ul nu mai decodifică MB de vectori la fiecare pornire.
+- [x] Timeline normalizează topic-ul (lowercase/trim) - `-topic Auth` găsește timeline-ul "auth".
+- [x] `session end` fără sesiune activă = exit 0 (hook-ul Stop rămâne verde).
+- [x] Mesaje: summarize menționează anthropic.
+- [x] Verificat: XSS escapad în webui, `go test -race` curat, SQL parameterizat, 108 teste.

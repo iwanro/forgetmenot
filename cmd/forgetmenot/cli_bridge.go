@@ -80,7 +80,7 @@ func cliBridgeImportCmd(args []string) int {
 	ctx := context.Background()
 	// Load existing facts once so repeated runs are idempotent (no embedder
 	// available to dedupe semantically, so we dedupe by exact content).
-	existing, _, err := store.All(ctx, *project)
+	existing, err := store.AllMeta(ctx, *project)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bridge import: %v\n", err)
 		return 1

@@ -23,7 +23,7 @@ func (s *Service) ProjectContext(ctx context.Context, project string, limit, bud
 	if limit <= 0 {
 		limit = 15
 	}
-	mems, _, err := s.Store.All(ctx, project)
+	mems, err := s.Store.AllMeta(ctx, project)
 	if err != nil {
 		return "", nil, err
 	}
@@ -183,7 +183,7 @@ func (s *Service) Decay(ctx context.Context, olderThan time.Duration, minImporta
 	if minImportance < 0 || minImportance > 1 {
 		minImportance = 0.1
 	}
-	mems, _, err := s.Store.All(ctx, "")
+	mems, err := s.Store.AllMeta(ctx, "")
 	if err != nil {
 		return 0, err
 	}

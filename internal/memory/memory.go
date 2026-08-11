@@ -161,6 +161,9 @@ type Store interface {
 	// All returns every memory in a project ("" = all projects) together
 	// with its embedding. Used for brute-force semantic search in M0.
 	All(ctx context.Context, project string) ([]*Memory, [][]float64, error)
+	// AllMeta returns every memory in a project WITHOUT decoding embeddings.
+	// Use for metadata-only read paths (context, list, timeline, decay...).
+	AllMeta(ctx context.Context, project string) ([]*Memory, error)
 	// SetEmbedding replaces a memory's vector and records which embedder
 	// produced it (mode: "semantic" or "lexical"). Recall uses it to heal
 	// vectors written by a different provider instead of silently missing

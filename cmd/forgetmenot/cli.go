@@ -308,7 +308,7 @@ func cliListCmd(args []string) int {
 	defer store.Close()
 
 	ctx := context.Background()
-	mems, _, err := store.All(ctx, *project)
+	mems, err := store.AllMeta(ctx, *project)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "list: %v\n", err)
 		return 1

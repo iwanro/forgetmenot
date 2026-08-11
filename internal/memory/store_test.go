@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func newTestStore(t *testing.T) *SQLiteStore {
@@ -109,5 +110,36 @@ func TestStoreAllAndCount(t *testing.T) {
 	n, _ := s.Count(context.Background(), "p2")
 	if n != 1 {
 		t.Fatalf("count p2: %d", n)
+	}
+}
+
+// TestAllMetaMatchesAll verifies AllMeta returns the same memories as All
+// (minus embeddings) without decoding vector BLOBs.
+func TestAllMetaMatchesAll(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	m := &Memory{ID: "m1", Type: TypeFact, Content: "hello", Project: "p",
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), LastAccessedAt: time.Now().UTC()}
+	if err := s.Insert(ctx, m, []float64{1, 2, 3}); err != nil {
+		t.Fatal(err)
+	}
+
+	all, embs, err := s.All(ctx, "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || len(embs) != 1 || len(embs[0]) != 3 {
+		t.Fatalf("All: %d mems, %d embs (dim %d)", len(all), len(embs), len(embs[0]))
+	}
+
+	meta, err := s.AllMeta(ctx, "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(meta) != 1 {
+		t.Fatalf("AllMeta: %d mems, want 1", len(meta))
+	}
+	if meta[0].ID != all[0].ID || meta[0].Content != all[0].Content || meta[0].Type != all[0].Type {
+		t.Fatalf("AllMeta mismatch: %+v vs %+v", meta[0], all[0])
 	}
 }

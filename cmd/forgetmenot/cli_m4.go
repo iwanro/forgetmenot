@@ -63,6 +63,12 @@ func cliSessionEnd(args []string) int {
 	svc := memory.NewService(store, nil)
 	svc.SetDBPath(*dbPath)
 
+	// No active session to end (SessionStart never ran, or it already
+	// ended): not an error - the Stop hook must stay green.
+	if svc.CurrentSessionID() == "" {
+		fmt.Println("no active session")
+		return 0
+	}
 	if err := svc.EndSession(context.Background(), "", *summary); err != nil {
 		fmt.Fprintf(os.Stderr, "session end: %v\n", err)
 		return 1
@@ -186,7 +192,7 @@ func cliExportMdCmd(args []string) int {
 }
 
 func exportMarkdown(ctx context.Context, svc *memory.Service, project string) (string, error) {
-	mems, _, err := svc.Store.All(ctx, project)
+	mems, err := svc.Store.AllMeta(ctx, project)
 	if err != nil {
 		return "", err
 	}

@@ -164,3 +164,29 @@ func TestServiceSessionAttachment(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestTimelineTopicNormalization: topics are stored lowercased; the timeline
+// must find them regardless of the caller's case or padding.
+func TestTimelineTopicNormalization(t *testing.T) {
+	store := newTestStore(t)
+	svc := NewService(store, fakeEmbedder{})
+	ctx := context.Background()
+
+	id, _, err := svc.Remember(ctx, RememberInput{
+		Content: "we chose JWT", Type: TypeDecision, Project: "p", Topics: []string{"Auth"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = id
+
+	for _, topic := range []string{"auth", "Auth", " AUTH ", "Auth\t"} {
+		entries, err := svc.Timeline(ctx, "p", topic, 10)
+		if err != nil {
+			t.Fatalf("topic %q: %v", topic, err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("topic %q: %d entries, want 1", topic, len(entries))
+		}
+	}
+}

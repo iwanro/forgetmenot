@@ -216,3 +216,13 @@ func TestCLIRecallRequiresQuery(t *testing.T) {
 		t.Fatal("expected non-zero exit for empty query")
 	}
 }
+
+// TestCLISessionEndWithoutActiveSession: the Stop hook must stay green even
+// when no session was ever started (missing marker file).
+func TestCLISessionEndWithoutActiveSession(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "sess.db")
+	if code := runCLI([]string{"session", "end", "-db", db}); code != 0 {
+		t.Fatalf("session end exit %d, want 0 (no active session is not an error)", code)
+	}
+}

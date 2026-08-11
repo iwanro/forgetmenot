@@ -308,7 +308,7 @@ func addConflictsTool(server *mcp.Server, svc *memory.Service) {
 		}
 		// Load all memories once to avoid N+1 lookups per conflict.
 		content := map[string]string{}
-		if mems, _, err := svc.Store.All(ctx, ""); err == nil {
+		if mems, err := svc.Store.AllMeta(ctx, ""); err == nil {
 			for _, m := range mems {
 				content[m.ID] = m.Content
 			}
