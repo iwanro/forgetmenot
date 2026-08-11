@@ -212,7 +212,7 @@ func TestCLISetupMCPPreservesOtherServers(t *testing.T) {
   }
 }`), 0o644)
 
-	if code := cliSetupTo([]string{"-db", "/tmp/x.db", "-mcp", out}); code != 0 {
+	if code := cliSetupTo([]string{"-db", "/tmp/x.db", "-out", filepath.Join(dir, ".claude", "settings.json"), "-mcp", out}); code != 0 {
 		t.Fatalf("setup exit %d", code)
 	}
 	b, _ := os.ReadFile(out)
