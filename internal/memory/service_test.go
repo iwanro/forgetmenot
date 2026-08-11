@@ -4,6 +4,8 @@ import (
 	"context"
 	"math"
 	"testing"
+
+	"github.com/iwanro/forgetmenot/internal/embed"
 )
 
 // fakeEmbedder maps known strings to fixed vectors so tests are deterministic
@@ -92,6 +94,106 @@ func TestRememberDedupes(t *testing.T) {
 	if m.AccessCount != 2 {
 		t.Fatalf("access_count = %d, want 2 after reinforcement", m.AccessCount)
 	}
+}
+
+func TestLexicalModeFlagsAndDedupes(t *testing.T) {
+	store := newTestStore(t)
+	svc := NewService(store, embed.NewLexical())
+	ctx := context.Background()
+
+	id, isNew, err := svc.Remember(ctx, RememberInput{
+		Content: "we chose JWT for authentication", Type: TypeDecision, Project: "p",
+	})
+	if err != nil || !isNew {
+		t.Fatalf("insert: isNew=%v err=%v", isNew, err)
+	}
+	m, _, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Metadata["embedding_mode"] != "lexical" {
+		t.Fatalf("embedding_mode = %q, want lexical", m.Metadata["embedding_mode"])
+	}
+
+	// An exact duplicate in lexical mode must still dedupe: identical text
+	// hashes to the same vector, cosine 1.0 >= the lexical dedupe threshold.
+	id2, isNew2, err := svc.Remember(ctx, RememberInput{
+		Content: "we chose JWT for authentication", Type: TypeDecision, Project: "p",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if isNew2 || id2 != id {
+		t.Fatalf("lexical dedupe failed: isNew=%v id=%s", isNew2, id2)
+	}
+	n, _ := store.Count(ctx, "p")
+	if n != 1 {
+		t.Fatalf("count = %d, want 1", n)
+	}
+}
+
+func TestRecallHealsEmbeddingModeDrift(t *testing.T) {
+	ctx := context.Background()
+
+	// Semantic phase: write with the dense fake embedder (dim 3).
+	sem := NewService(newTestStore(t), fakeEmbedder{})
+	semID, _, err := sem.Remember(ctx, RememberInput{
+		Content: "backend is FastAPI on Python 3.12", Type: TypeFact, Project: "p",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Outage phase: the same DB, now served by a lexical embedder. The write
+	// is flagged embedding_mode=lexical.
+	lex := NewService(sem.Store, embed.NewLexical())
+	lexID, _, err := lex.Remember(ctx, RememberInput{
+		Content: "the database is Postgres 16", Type: TypeFact, Project: "p",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Lexical recall must score both memories in lexical space (the semantic
+	// one is re-embedded in memory) and must NOT overwrite the semantic
+	// vector in the DB.
+	results, err := lex.Recall(ctx, RecallInput{Query: "which database postgres version", Project: "p", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 || results[0].Memory.ID != lexID {
+		t.Fatalf("lexical recall top = %v, want %s", resultIDs(results), lexID)
+	}
+	_, emb, _ := sem.Store.Get(ctx, semID)
+	if len(emb) != 3 || emb[0] != 1 {
+		t.Fatalf("semantic vector overwritten by lexical recall: %v", emb)
+	}
+
+	// Recovery phase: semantic recall re-embeds and persists the outage
+	// write, so it becomes searchable in semantic space again, and the
+	// semantic memory is top hit.
+	results, err = sem.Recall(ctx, RecallInput{Query: "what framework does the backend use", Project: "p", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 || results[0].Memory.ID != semID {
+		t.Fatalf("semantic recall top = %v, want %s", resultIDs(results), semID)
+	}
+	m, emb, _ := sem.Store.Get(ctx, lexID)
+	if m.Metadata["embedding_mode"] != "semantic" {
+		t.Fatalf("embedding_mode = %q after heal, want semantic", m.Metadata["embedding_mode"])
+	}
+	if len(emb) != 3 {
+		t.Fatalf("outage write not re-embedded on heal: dim %d, want 3", len(emb))
+	}
+}
+
+func resultIDs(results []SearchResult) []string {
+	out := make([]string, 0, len(results))
+	for _, r := range results {
+		out = append(out, r.Memory.ID)
+	}
+	return out
 }
 
 func TestRememberSeparatesProjects(t *testing.T) {

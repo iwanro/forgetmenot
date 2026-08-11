@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/iwanro/forgetmenot/internal/eval"
@@ -39,7 +40,7 @@ type cliExport struct {
 // Returns a process exit code.
 func runCLI(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: forgetmenot <serve|remember|capture|session|timeline|project_context|maintain|setup|bridge|export-md|web|summarize|doctor|export|import|stats|list|eval> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: forgetmenot <serve|remember|recall|search|capture|session|timeline|project_context|maintain|setup|bridge|export-md|web|summarize|doctor|export|import|stats|list|eval> [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -53,6 +54,8 @@ func runCLI(args []string) int {
 		return cliListCmd(args[1:])
 	case "eval":
 		return cliEvalCmd(args[1:])
+	case "recall", "search":
+		return cliRecallCmd(args[1:])
 	case "project_context":
 		return cliProjectContextCmd(args[1:])
 	case "capture":
@@ -88,7 +91,7 @@ func runCLI(args []string) int {
 func cliEvalCmd(args []string) int {
 	fs := flag.NewFlagSet("eval", flag.ExitOnError)
 	dbPath := fs.String("db", defaultDBPath(), "path to the SQLite database")
-	embedKind := fs.String("embed", "ollama", "embedding provider: ollama | openai")
+	embedKind := fs.String("embed", "auto", "embedding provider: auto | ollama | openai | lexical")
 	embedURL := fs.String("embed-url", "", "embedding endpoint base URL")
 	embedModel := fs.String("embed-model", "", "embedding model name")
 	embedAPIKey := fs.String("embed-api-key", "", "API key for the openai provider")
@@ -312,6 +315,83 @@ func cliListCmd(args []string) int {
 	}
 	for _, m := range mems {
 		fmt.Printf("%s  [%s] %s: %s\n", m.ID, m.Type, m.Project, truncate(m.Content, 80))
+	}
+	return 0
+}
+
+// cliRecallCmd searches memory from the command line, mirroring the MCP
+// memory.recall tool so scripts and non-MCP agents get the same semantic
+// search. Uses the same embedder resolution as the server (auto by default:
+// Ollama when up, built-in lexical otherwise).
+func cliRecallCmd(args []string) int {
+	fs := flag.NewFlagSet("recall", flag.ExitOnError)
+	dbPath := fs.String("db", defaultDBPath(), "path to the SQLite database")
+	project := fs.String("project", "", "search only this project (empty = all)")
+	typ := fs.String("type", "", "search only this memory type")
+	limit := fs.Int("limit", 10, "max results")
+	embedKind := fs.String("embed", "auto", "embedding provider: auto | ollama | openai | lexical")
+	embedURL := fs.String("embed-url", "", "embedding endpoint base URL")
+	embedModel := fs.String("embed-model", "", "embedding model name")
+	embedAPIKey := fs.String("embed-api-key", "", "API key for the openai provider")
+	jsonOut := fs.Bool("json", false, "print machine-readable JSON")
+	fs.Parse(args)
+
+	query := strings.Join(fs.Args(), " ")
+	if strings.TrimSpace(query) == "" {
+		fmt.Fprintln(os.Stderr, "recall: query is required (e.g. forgetmenot recall 'auth tokens')")
+		return 2
+	}
+
+	store := openStoreOrDie(*dbPath)
+	defer store.Close()
+
+	em, err := buildEmbedder(*embedKind, *embedURL, *embedModel, *embedAPIKey)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "recall: %v\n", err)
+		return 1
+	}
+	svc := memory.NewService(store, em)
+
+	results, err := svc.Recall(context.Background(), memory.RecallInput{
+		Query:   query,
+		Project: *project,
+		Type:    memory.Type(*typ),
+		Limit:   *limit,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "recall: %v\n", err)
+		return 1
+	}
+	if *jsonOut {
+		type outRow struct {
+			ID      string   `json:"id"`
+			Type    string   `json:"type"`
+			Project string   `json:"project"`
+			Content string   `json:"content"`
+			Score   float64  `json:"score"`
+			Topics  []string `json:"topics,omitempty"`
+		}
+		out := make([]outRow, 0, len(results))
+		for _, r := range results {
+			t := make([]string, 0, len(r.Topics))
+			for _, tp := range r.Topics {
+				t = append(t, tp.Name)
+			}
+			out = append(out, outRow{
+				ID: r.Memory.ID, Type: string(r.Memory.Type), Project: r.Memory.Project,
+				Content: r.Memory.Content, Score: r.Score, Topics: t,
+			})
+		}
+		b, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "recall: %v\n", err)
+			return 1
+		}
+		fmt.Println(string(b))
+		return 0
+	}
+	for _, r := range results {
+		fmt.Printf("%.3f  [%s] %s: %s\n", r.Score, r.Memory.Type, r.Memory.Project, truncate(r.Memory.Content, 120))
 	}
 	return 0
 }

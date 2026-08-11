@@ -161,6 +161,11 @@ type Store interface {
 	// All returns every memory in a project ("" = all projects) together
 	// with its embedding. Used for brute-force semantic search in M0.
 	All(ctx context.Context, project string) ([]*Memory, [][]float64, error)
+	// SetEmbedding replaces a memory's vector and records which embedder
+	// produced it (mode: "semantic" or "lexical"). Recall uses it to heal
+	// vectors written by a different provider instead of silently missing
+	// them.
+	SetEmbedding(ctx context.Context, id string, vec []float64, mode string) error
 	Count(ctx context.Context, project string) (int, error)
 	CountProjects(ctx context.Context) (int, error)
 

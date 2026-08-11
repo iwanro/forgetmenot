@@ -408,6 +408,16 @@ Diferențiatorii noștri, în ordinea importanței:
 - [ ] Plugin-uri / sink-uri (Notion, Jira) (P1).
 - [ ] Telemetrie opt-in (P1).
 
+### v0.4 - Zero-config embeddings, orice mediu (2026-08-11)
+- [x] `LexicalEmbedder`: embeddings deterministe offline (unigrams+bigrams hashate, 768d), fără serviciu extern. recall@k = 100% (20/20) pe eval set.
+- [x] `AutoEmbedder`: primary (Ollama) + fallback lexical cu cooldown + probe; comutare transparentă și logată.
+- [x] `-embed auto|ollama|openai|lexical`; default `auto` → MCP funcționează out-of-the-box fără Ollama (scenariu raportat de opencode: remember/recall nu mai eșuează cu `connection refused`).
+- [x] Provenanță `embedding_mode` în metadata + re-embed la recall: vectorii scriși în timpul unei pene sunt auto-vindecați când Ollama revine; vectorii semantici nu sunt suprascriși de cei lexicali.
+- [x] Threshold-uri calibrate pe scala lexicală (dedupe/conflict/recall floor).
+- [x] `forgetmenot recall` (CLI): mirror al tool-ului MCP `memory.recall`, funcționează offline.
+- [x] `doctor` aware de mod: auto → warn (fallback activ), strict → FAIL, lexical → ok fără endpoint.
+- [x] Teste: 93 (lexical determinism/sim, auto fallback+recovery, recall heal, integrare MCP fără embedding service).
+
 ## 13. Decizii deschise (TBD)
 
 1. ~~Limbaj de implementare~~: **ales: Go** (binary static unic, zero dependențe, SDK MCP oficial `modelcontextprotocol/go-sdk`, SQLite pure-Go fără cgo; embeddings prin HTTP către Ollama local sau API remote).

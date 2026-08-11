@@ -7,7 +7,7 @@
 
 Persistent, structured, semantically searchable memory for AI agents, delivered as a local **MCP server** written in Go. One static binary, zero runtime dependencies, data stays on your machine.
 
-Works with any MCP-capable agent: Claude Code, Cursor, Codex, OpenClaw and others.
+Works with any MCP-capable agent: Claude Code, Cursor, Codex, opencode and others. Zero configuration: if no embedding service is available, the built-in lexical search keeps memory working offline.
 
 ![forgetmenot demo](docs/demo.gif)
 
@@ -17,7 +17,7 @@ Agents forget everything between sessions. You re-explain the same context, arch
 
 Positioning: **hygiene + trust** (dedupe, provenance, conflicts, intelligent forgetting) as first-class features, not add-ons. Details in [PRD.md](./PRD.md).
 
-## Features (v0.3) ✨
+## Features (v0.4) ✨
 
 - `memory.remember` - store a memory; automatic dedupe + conflict detection + topic labels
 - `memory.recall` - semantic search with similarity score, project/type filters, hides superseded memories, returns source + trust
@@ -41,8 +41,10 @@ Positioning: **hygiene + trust** (dedupe, provenance, conflicts, intelligent for
 - **CLAUDE.md bridge**: `bridge export` + `bridge import`
 - **Memory budget**: `project_context -budget N`
 - Local embeddings (Ollama) or remote (OpenAI-compatible)
+- **Offline fallback**: `-embed auto` (default) uses Ollama when reachable and a built-in deterministic lexical embedder otherwise - memory works on machines with no Ollama, no API key, nothing
+- **CLI recall**: `forgetmenot recall "query"` mirrors the `memory.recall` tool for scripts and non-MCP agents
 - Pure-Go SQLite: single static binary, no cgo, easy cross-compile
-- CLI: `remember`, `capture`, `session`, `timeline`, `project_context`, `maintain`, `setup`, `bridge`, `export-md`, `export/import`, `stats`, `list`, `eval`
+- CLI: `remember`, `recall`, `capture`, `session`, `timeline`, `project_context`, `maintain`, `setup`, `bridge`, `export-md`, `export/import`, `stats`, `list`, `eval`
 - Eval harness with recall@k (20 queries), JSON output for CI
 
 ## Cross-session topic correlation 🔀
@@ -99,6 +101,7 @@ import reads bullets from a `<!-- forgetmenot:facts -->` section.
 forgetmenot session start|end -project demo            # session lifecycle (hooks do this)
 forgetmenot timeline -project demo -topic auth         # topic evolution across sessions
 forgetmenot remember -content "chose JWT" -type decision -project demo -topics auth
+forgetmenot recall "which auth did we choose" -project demo          # works offline too
 forgetmenot project_context -project demo -budget 4000 # session-start context injection (used by hooks)
 forgetmenot capture -project demo                      # session-end capture, reads summary from stdin (used by hooks)
 forgetmenot maintain                                   # decay + future compression (cron-friendly)
@@ -123,12 +126,14 @@ dataset and runner live in `internal/eval` so the benchmark is reproducible:
 ```bash
 forgetmenot eval -embed ollama          # against local Ollama embeddings
 forgetmenot eval -embed openai -embed-url https://api.openai.com/v1 -embed-api-key $KEY
+forgetmenot eval -embed lexical         # offline, deterministic - no service needed
 forgetmenot eval -json                  # machine-readable for CI
 ```
 
 The dataset is verified in CI (hermetic bag-of-words embedder): **recall@k =
-100% (20/20)** on the default dataset. Real-model results vary by embedder;
-the same command above produces yours.
+100% (20/20)** on the default dataset. The built-in lexical embedder also
+scores 100% (20/20) offline, so `forgetmenot eval` works on any machine.
+Real-model results vary by embedder; the same command above produces yours.
 
 ## Install 🚀
 
@@ -147,22 +152,40 @@ make build
 
 ### Embeddings
 
-**Ollama (recommended, local):**
+**Default: `auto` (zero configuration).** The server tries local Ollama; if it
+is unreachable, remember/recall transparently use the built-in lexical
+embedder. The moment Ollama comes up, semantic search resumes - and recall
+automatically re-embeds any memories written during the outage, so nothing
+goes stale or invisible.
+
+```bash
+forgetmenot                  # -embed auto, works with or without Ollama
+```
+
+**Strict local (Ollama):**
 
 ```bash
 ollama pull nomic-embed-text
 ollama serve  # default: http://localhost:11434
+forgetmenot -embed ollama    # fails loudly if the endpoint is down
 ```
 
-**Alternative, remote (OpenAI-compatible):**
+**Remote (OpenAI-compatible):**
 
 ```bash
 forgetmenot -embed openai -embed-url https://api.openai.com/v1 -embed-api-key $OPENAI_API_KEY
 ```
 
-## Claude Code setup
+**Offline-only:**
 
-Add the server to `~/.claude.json` or to `.mcp.json` in your project:
+```bash
+forgetmenot -embed lexical   # deterministic lexical embeddings, no network at all
+```
+
+## Agent setup (any MCP client)
+
+Add the server to `~/.claude.json`, `.mcp.json` in your project, or your
+agent's MCP config (opencode, Cursor, Codex...):
 
 ```json
 {
@@ -175,7 +198,13 @@ Add the server to `~/.claude.json` or to `.mcp.json` in your project:
 }
 ```
 
-If `forgetmenot` is not in `$PATH`, use the absolute path to the binary. The database is created automatically at `$XDG_DATA_HOME/forgetmenot/memory.db` (default `~/.local/share/forgetmenot/memory.db`). Override with `-db`.
+No Ollama, no API key, no PATH tricks required: the default `auto` mode makes
+`memory.remember` and `memory.recall` work out of the box.
+
+If `forgetmenot` is not in `$PATH`, use the absolute path to the binary (or
+run `go install github.com/iwanro/forgetmenot/cmd/forgetmenot@latest`). The
+database is created automatically at `$XDG_DATA_HOME/forgetmenot/memory.db`
+(default `~/.local/share/forgetmenot/memory.db`). Override with `-db`.
 
 ## Usage 💬
 
@@ -205,7 +234,7 @@ Structure:
 ```
 cmd/forgetmenot/    entry point, CLI subcommands
 internal/memory/    core: model, SQLite store, service (remember/recall/...)
-internal/embed/     embedding providers (Ollama, OpenAI-compat)
+internal/embed/     embedding providers (Ollama, OpenAI-compat, lexical fallback, auto)
 internal/mcpserver/ MCP layer (memory.* tools)
 internal/eval/      eval harness (recall@k)
 ```
@@ -218,7 +247,8 @@ internal/eval/      eval harness (recall@k)
 - M3 ✅: trust levels + sanitization, CLAUDE.md bridge, memory budget, public benchmark
 - M4 ✅: sessions, topics, timeline correlation, markdown export, compact embeddings
 - M5 ✅: Web UI dashboard, topics in recall
-- v0.3 ✅ (this release): LLM auto-topics + summarize, doctor, release automation
+- v0.3 ✅: LLM auto-topics + summarize, doctor, release automation
+- v0.4 ✅ (this release): zero-config embeddings (auto mode + lexical fallback), CLI recall, offline eval
 - M6: HTTP/SSE transport, plugins, telemetry
 
 ## License

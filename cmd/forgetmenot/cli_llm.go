@@ -61,6 +61,7 @@ func cliSummarizeCmd(args []string) int {
 func cliDoctorCmd(args []string) int {
 	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
 	dbPath := fs.String("db", defaultDBPath(), "path to the SQLite database")
+	embedKind := fs.String("embed", "auto", "embedding provider: auto | ollama | openai | lexical")
 	embedURL := fs.String("embed-url", "", "embedding endpoint base URL (default Ollama localhost:11434)")
 	fs.Parse(args)
 
@@ -84,10 +85,25 @@ func cliDoctorCmd(args []string) int {
 	defer store.Close()
 	check("database "+*dbPath, nil)
 
-	// Embeddings endpoint reachable. We only probe reachability, not a
-	// specific model: Ollama's /api/tags answers with the installed models
-	// even when nomic-embed-text is not pulled, so this avoids false FAILs.
-	check("embedding endpoint", checkEmbedReachable(*embedURL))
+	// Embeddings endpoint. We only probe reachability, not a specific model:
+	// Ollama's /api/tags answers with the installed models even when
+	// nomic-embed-text is not pulled, so this avoids false FAILs.
+	// In auto mode an unreachable endpoint is a warning, not a failure: the
+	// server degrades to the built-in lexical embedder and memory keeps
+	// working. Strict modes (ollama/openai) still fail loudly.
+	err = checkEmbedReachable(*embedURL)
+	switch *embedKind {
+	case "lexical":
+		fmt.Println("[ok]   embedding provider: built-in lexical (offline, no endpoint required)")
+	case "auto":
+		if err != nil {
+			fmt.Printf("[warn] embedding endpoint unreachable (%v) - using built-in lexical fallback; semantic search resumes when Ollama is up\n", err)
+		} else {
+			fmt.Println("[ok]   embedding endpoint reachable (auto mode: semantic search active)")
+		}
+	default:
+		check("embedding endpoint", err)
+	}
 
 	// Current session marker.
 	svc := memory.NewService(store, nil)

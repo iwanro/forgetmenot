@@ -1,13 +1,14 @@
-# Launch drafts for forgetmenot v0.3.1
+# Launch drafts for forgetmenot v0.4
 
 Post these within the same week as the release. Lead with the problem, not the
 feature list. One post per platform; adapt length/tone per platform rules.
 
-The strongest hooks: **cross-session topic correlation (timeline)**, the
-**embedded Web UI**, and **LLM-powered memory hygiene** (auto-topics +
-summarize). All three are immediately demoable.
+The strongest hooks: **zero-config memory for any agent** (works with no
+Ollama, no API key - built-in lexical fallback), **cross-session topic
+correlation (timeline)**, the **embedded Web UI**, and **LLM-powered memory
+hygiene** (auto-topics + summarize).
 
-Current release: v0.3.1 (MIT, single static Go binary, local-first).
+Current release: v0.4 (MIT, single static Go binary, local-first).
 
 ---
 
@@ -46,7 +47,16 @@ static binary for linux/darwin/windows, no cgo.
 
 Looking for feedback on the topic model, the trust levels, and the
 LLM-compression approach.
-https://github.com/iwanro/forgetmenot (MIT, v0.3.1)
+https://github.com/iwanro/forgetmenot (MIT, v0.4)
+
+---
+
+## Any agent, zero config (new in v0.4)
+
+Drop-in for every MCP client (Claude Code, Cursor, opencode, Codex...). No
+Ollama, no API key, no PATH tricks: `-embed auto` (default) uses local Ollama
+when it is up and a built-in lexical embedder otherwise. `forgetmenot recall`
+works the same offline.
 
 ---
 
@@ -139,8 +149,13 @@ automatically:
 3. A **skill file** teaches Claude to recall before asking and remember
    decisions as they happen.
 
-What's new in v0.3:
+What's new in v0.4:
 
+- **Works with no embedding service at all.** Auto mode falls back to a
+  built-in lexical search when Ollama is missing, so `memory.remember` and
+  `memory.recall` work out of the box in any MCP client (Claude Code, Cursor,
+  opencode, Codex). When Ollama comes back, semantic search resumes and
+  outage-era memories are re-embedded automatically.
 - **Timeline per topic**: `forgetmenot timeline -topic auth` shows how auth
   evolved across all your sessions. Claude gets the same via
   `memory.timeline`.
@@ -148,10 +163,11 @@ What's new in v0.3:
   one summary, so memory stays clean without manual cleanup.
 - **Web dashboard**: `forgetmenot web` → http://127.0.0.1:8090. Browse
   memories, timeline, conflicts; resolve conflicts inline.
-- **`forgetmenot doctor`** tells you if your setup is healthy.
+- **`forgetmenot doctor`** tells you if your setup is healthy (and warns,
+  not fails, when it is running on the offline fallback).
 
-Local-first, one static Go binary, SQLite, Ollama or any OpenAI-compatible
-endpoint. MIT. Setup is one command: `forgetmenot setup`.
+Local-first, one static Go binary, SQLite. Ollama optional, OpenAI-compatible
+endpoints supported. MIT. Setup is one command: `forgetmenot setup`.
 
 https://github.com/iwanro/forgetmenot
 
@@ -161,9 +177,9 @@ https://github.com/iwanro/forgetmenot
 
 1/ Agents forget everything between sessions. I built forgetmenot: memory for AI agents. One static Go binary, local-first, MIT.
 
-2/ Cross-session timelines: sessions group memories, topics label them. `forgetmenot timeline -topic auth` = "we chose JWT" last week → "switched refresh tokens to 60m" yesterday.
+2/ It works in ANY MCP client with zero config: Claude Code, Cursor, opencode. No Ollama, no API key - if no embedding service exists, it uses a built-in lexical search. `forgetmenot recall` works offline too.
 
-3/ It compresses itself: `summarize` sends stale session notes to a local LLM and replaces them with one summary. `-auto-topics` tags new memories.
+3/ Cross-session timelines: sessions group memories, topics label them. `forgetmenot timeline -topic auth` = "we chose JWT" last week → "switched refresh tokens to 60m" yesterday. It also compresses itself with a local LLM.
 
 4/ Web UI inside the binary (`forgetmenot web`), trust levels against prompt injection, doctor command. Setup: `forgetmenot setup`.
 

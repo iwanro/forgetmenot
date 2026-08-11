@@ -99,6 +99,7 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 	if err != nil {
 		return "", false, fmt.Errorf("embed content: %w", err)
 	}
+	dedupe, conflict, _ := s.thresholds()
 
 	// Dedupe against existing memories in the same project.
 	existing, embs, err := s.Store.All(ctx, in.Project)
@@ -109,7 +110,7 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 		if m.Type != in.Type {
 			continue
 		}
-		if sim := Cosine(vec, embs[i]); sim >= s.DedupeThreshold {
+		if sim := Cosine(vec, embs[i]); sim >= dedupe {
 			// Reinforce: bump access + refresh timestamp, keep the original.
 			if err := s.Store.Update(ctx, m.ID, UpdatePatch{BumpAccess: true}); err != nil {
 				return "", false, err
@@ -126,7 +127,7 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 		if m.Type != in.Type {
 			continue
 		}
-		if sim := Cosine(vec, embs[i]); sim >= s.ConflictThreshold {
+		if sim := Cosine(vec, embs[i]); sim >= conflict {
 			conflictIDs = append(conflictIDs, m.ID)
 		}
 	}
@@ -156,6 +157,13 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (string, bool,
 	}
 	if m.Metadata == nil {
 		m.Metadata = map[string]string{}
+	}
+	// Provenance: recall uses this to detect vectors written by a different
+	// provider (an Ollama outage, a config switch) and re-embeds them on read
+	// instead of silently missing them. Semantic writes leave the flag unset
+	// (the legacy default), keeping normal databases unchanged.
+	if s.lexicalMode() {
+		m.Metadata["embedding_mode"] = "lexical"
 	}
 	if err := s.Store.Insert(ctx, m, vec); err != nil {
 		return "", false, err
@@ -217,6 +225,12 @@ func (s *Service) Recall(ctx context.Context, in RecallInput) ([]SearchResult, e
 	if err != nil {
 		return nil, err
 	}
+	// Heal embedding-mode drift before scoring: vectors written by another
+	// provider (an outage or a config change) must not become invisible to
+	// recall. See reembedForRecall.
+	if err := s.reembedForRecall(ctx, mems, embs, qvec); err != nil {
+		return nil, err
+	}
 	// Collect superseded memory IDs to hide them from results (PRD §6.3).
 	superseded := map[string]bool{}
 	ids, err := s.Store.SupersededIDs(ctx)
@@ -235,7 +249,7 @@ func (s *Service) Recall(ctx context.Context, in RecallInput) ([]SearchResult, e
 			continue // superseded memories are not suggested by default
 		}
 		score := Cosine(qvec, embs[i])
-		if score < s.MinRecallScore {
+		if score < s.recallFloor() {
 			continue
 		}
 		results = append(results, SearchResult{Memory: m, Score: score})
@@ -343,6 +357,63 @@ func (s *Service) embedOne(ctx context.Context, text string) ([]float64, error) 
 		return nil, fmt.Errorf("expected 1 embedding, got %d", len(vecs))
 	}
 	return vecs[0], nil
+}
+
+// lexicalMode reports whether the active embedder produces lexical vectors.
+// Embedders may implement IsLexical() (see internal/embed: LexicalEmbedder,
+// AutoEmbedder); Ollama/OpenAI providers do not, so semantic mode is the
+// default.
+func (s *Service) lexicalMode() bool {
+	ls, ok := s.Embedder.(interface{ IsLexical() bool })
+	return ok && ls.IsLexical()
+}
+
+// thresholds returns the dedupe / conflict / recall-cutoff values calibrated
+// to the active embedder's similarity scale. Lexical hashing scores are
+// sparser than dense semantic cosine, so the recall floor is lower and the
+// conflict band is narrower (fewer spurious contradictions).
+func (s *Service) thresholds() (dedupe, conflict, minRecall float64) {
+	if s.lexicalMode() {
+		return 0.90, 0.75, 0.12
+	}
+	return s.DedupeThreshold, s.ConflictThreshold, s.MinRecallScore
+}
+
+// recallFloor is the minimum similarity for a recall hit.
+func (s *Service) recallFloor() float64 {
+	_, _, minRecall := s.thresholds()
+	return minRecall
+}
+
+// reembedForRecall rewrites stored vectors whose provenance does not match
+// the active embedder, so recall scores them correctly instead of dropping
+// them via dimension mismatch or garbage cosine.
+//
+// Semantic mode heals memories written during an outage (flagged lexical) and
+// legacy vectors with a different dimension, persisting the corrected vector
+// so each memory is healed once. Lexical mode re-embeds everything that is
+// not already lexical in memory only: semantic vectors are the source of
+// truth and must never be overwritten by weaker lexical ones, so the DB stays
+// clean for when the primary provider returns.
+func (s *Service) reembedForRecall(ctx context.Context, mems []*Memory, embs [][]float64, qvec []float64) error {
+	semantic := !s.lexicalMode()
+	for i, m := range mems {
+		mode := m.Metadata["embedding_mode"]
+		switch {
+		case semantic && (mode == "lexical" || (mode == "" && len(embs[i]) != len(qvec))):
+			v, err := s.embedOne(ctx, m.Content)
+			if err != nil || len(v) != len(qvec) {
+				continue // leave as-is; Cosine will score it 0 and drop it
+			}
+			embs[i] = v
+			_ = s.Store.SetEmbedding(ctx, m.ID, v, "semantic")
+		case !semantic && mode != "lexical":
+			if v, err := s.embedOne(ctx, m.Content); err == nil {
+				embs[i] = v
+			}
+		}
+	}
+	return nil
 }
 
 // Sanitize is the exported form of sanitizeContent, used by CLI write paths

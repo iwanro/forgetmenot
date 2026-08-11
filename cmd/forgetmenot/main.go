@@ -26,14 +26,14 @@ func main() {
 	// (serve is the default).
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-		case "export", "import", "stats", "list", "eval", "project_context", "capture", "maintain", "setup", "bridge", "remember", "session", "timeline", "export-md", "web", "summarize", "doctor":
+		case "export", "import", "stats", "list", "eval", "project_context", "capture", "maintain", "setup", "bridge", "remember", "recall", "search", "session", "timeline", "export-md", "web", "summarize", "doctor":
 			os.Exit(runCLI(os.Args[1:]))
 		}
 	}
 
 	var (
 		dbPath      = flag.String("db", defaultDBPath(), "path to the SQLite memory database")
-		embedKind   = flag.String("embed", "ollama", "embedding provider: ollama | openai")
+		embedKind   = flag.String("embed", "auto", "embedding provider: auto | ollama | openai | lexical (auto = ollama with built-in lexical fallback)")
 		embedURL    = flag.String("embed-url", "", "embedding endpoint base URL (default: Ollama localhost:11434)")
 		embedModel  = flag.String("embed-model", "", "embedding model name (default: nomic-embed-text)")
 		embedAPIKey = flag.String("embed-api-key", "", "API key for the openai provider")
@@ -74,14 +74,24 @@ func main() {
 }
 
 // buildEmbedder constructs the embedding provider from CLI flags.
+//
+//   - auto (default): Ollama when reachable, built-in lexical otherwise. This
+//     is the zero-configuration mode: memory works even where no embedding
+//     service exists, and upgrades to semantic search the moment Ollama is up.
+//   - ollama / openai: strict modes that fail loudly if the endpoint is down.
+//   - lexical: offline deterministic embeddings only, no network at all.
 func buildEmbedder(kind, url, model, apiKey string) (memory.Embedder, error) {
 	switch kind {
+	case "auto":
+		return embed.NewAuto(embed.NewOllama(url, model), embed.NewLexical()), nil
 	case "ollama":
 		return embed.NewOllama(url, model), nil
 	case "openai":
 		return embed.NewOpenAICompat(url, apiKey, model), nil
+	case "lexical":
+		return embed.NewLexical(), nil
 	default:
-		return nil, fmt.Errorf("unknown embed provider %q (want ollama or openai)", kind)
+		return nil, fmt.Errorf("unknown embed provider %q (want auto, ollama, openai or lexical)", kind)
 	}
 }
 

@@ -141,11 +141,19 @@ func TestCLIImportRejectsInvalidType(t *testing.T) {
 func TestCLIDoctorDBOpen(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "doc.db")
-	// A valid DB should pass the database check; the Ollama check will fail
-	// (no server), which is fine - we just want no crash and exit code 1.
+	// A valid DB passes; in default auto mode an unreachable Ollama is a
+	// warning (lexical fallback), not a failure. Strict modes still fail.
 	code := runCLI([]string{"doctor", "-db", db, "-embed-url", "http://127.0.0.1:1"})
+	if code != 0 {
+		t.Fatalf("auto-mode doctor exit %d, want 0 (fallback active)", code)
+	}
+	code = runCLI([]string{"doctor", "-db", db, "-embed", "ollama", "-embed-url", "http://127.0.0.1:1"})
 	if code == 0 {
-		t.Fatal("expected non-zero exit (embedding endpoint unreachable)")
+		t.Fatal("expected non-zero exit in strict ollama mode (endpoint unreachable)")
+	}
+	code = runCLI([]string{"doctor", "-db", db, "-embed", "lexical"})
+	if code != 0 {
+		t.Fatalf("lexical-mode doctor exit %d, want 0 (no endpoint required)", code)
 	}
 }
 
@@ -155,5 +163,56 @@ func TestCLISummarizeNoLLM(t *testing.T) {
 	code := runCLI([]string{"summarize", "-db", db, "-project", "p", "-llm", "bogus"})
 	if code == 0 {
 		t.Fatal("expected non-zero exit for unknown llm provider")
+	}
+}
+
+// captureStdout runs f with os.Stdout redirected to a pipe and returns the
+// captured output.
+// (shared: defined in cli_auto_test.go)
+
+// TestCLIRecallWorksOffline verifies the full offline path: memories written
+// by the CLI (which stores no embedding) are found by `forgetmenot recall`
+// using only the built-in lexical embedder. This is the exact scenario the
+// opencode review flagged as broken (no Ollama, no API key).
+func TestCLIRecallWorksOffline(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "recall.db")
+
+	if code := runCLI([]string{"remember", "-db", db, "-project", "p", "-content", "the database is Postgres 16 with alembic migrations"}); code != 0 {
+		t.Fatalf("remember exit %d", code)
+	}
+	if code := runCLI([]string{"remember", "-db", db, "-project", "p", "-content", "the mobile app is Flutter"}); code != 0 {
+		t.Fatalf("remember exit %d", code)
+	}
+
+	code := 0
+	out := captureStdout(t, func() {
+		code = runCLI([]string{"recall", "-db", db, "-project", "p", "-embed", "lexical", "-json", "which database postgres version do we run"})
+	})
+	if code != 0 {
+		t.Fatalf("recall exit %d (stdout: %s)", code, out)
+	}
+	var rows []struct {
+		ID      string  `json:"id"`
+		Content string  `json:"content"`
+		Score   float64 `json:"score"`
+	}
+	if err := json.Unmarshal([]byte(out), &rows); err != nil {
+		t.Fatalf("recall -json parse: %v (%s)", err, out)
+	}
+	if len(rows) == 0 {
+		t.Fatal("offline recall returned no results")
+	}
+	if !strings.Contains(rows[0].Content, "Postgres") {
+		t.Fatalf("top hit = %q, want the Postgres memory", rows[0].Content)
+	}
+}
+
+// TestCLIRecallRequiresQuery checks the argument validation path.
+func TestCLIRecallRequiresQuery(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "recall.db")
+	if code := runCLI([]string{"recall", "-db", db}); code == 0 {
+		t.Fatal("expected non-zero exit for empty query")
 	}
 }

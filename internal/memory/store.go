@@ -325,6 +325,33 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (*Memory, []float64, e
 	return s.get(ctx, id)
 }
 
+// SetEmbedding replaces a memory's vector and records embedding provenance in
+// its metadata. Used by recall to heal vectors written by a different
+// provider (an Ollama outage or a config switch) so they stay searchable.
+func (s *SQLiteStore) SetEmbedding(ctx context.Context, id string, vec []float64, mode string) error {
+	emb, err := encodeEmbedding(vec)
+	if err != nil {
+		return err
+	}
+	m, _, err := s.get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if m.Metadata == nil {
+		m.Metadata = map[string]string{}
+	}
+	m.Metadata["embedding_mode"] = mode
+	meta, err := json.Marshal(m.Metadata)
+	if err != nil {
+		return fmt.Errorf("encode metadata: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE memories SET embedding=?, metadata=? WHERE id=?`, emb, string(meta), id); err != nil {
+		return fmt.Errorf("set embedding: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) get(ctx context.Context, id string) (*Memory, []float64, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, type, content, project, importance, access_count,
