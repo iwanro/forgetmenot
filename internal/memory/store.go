@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go SQLite: keeps the binary static and cgo-free
@@ -682,6 +683,39 @@ func (s *SQLiteStore) TopicsForMemory(ctx context.Context, memoryID string) ([]T
 			return nil, err
 		}
 		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) TopicsForMemories(ctx context.Context, memoryIDs []string) (map[string][]Topic, error) {
+	out := map[string][]Topic{}
+	if len(memoryIDs) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(memoryIDs))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(memoryIDs))
+	for i, id := range memoryIDs {
+		args[i] = id
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT mt.memory_id, t.id, t.name, t.project FROM topics t
+		JOIN memory_topics mt ON mt.topic_id = t.id
+		WHERE mt.memory_id IN (`+placeholders+`)
+		ORDER BY t.name`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query topics for memories: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			memID string
+			t     Topic
+		)
+		if err := rows.Scan(&memID, &t.ID, &t.Name, &t.Project); err != nil {
+			return nil, err
+		}
+		out[memID] = append(out[memID], t)
 	}
 	return out, rows.Err()
 }

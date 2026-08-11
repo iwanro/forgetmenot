@@ -222,13 +222,17 @@ func (s *Service) Recall(ctx context.Context, in RecallInput) ([]SearchResult, e
 		results = results[:in.Limit]
 	}
 
-	// Attach topic labels (single query per memory; usually few results).
+	// Attach topic labels (one query for all results).
+	resultIDs := make([]string, 0, len(results))
 	for i := range results {
-		topics, err := s.Store.TopicsForMemory(ctx, results[i].Memory.ID)
-		if err != nil {
-			return nil, err
-		}
-		results[i].Topics = topics
+		resultIDs = append(resultIDs, results[i].Memory.ID)
+	}
+	topicsByID, err := s.Store.TopicsForMemories(ctx, resultIDs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range results {
+		results[i].Topics = topicsByID[results[i].Memory.ID]
 	}
 
 	// Reinforce whatever was actually retrieved.

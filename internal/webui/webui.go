@@ -4,7 +4,6 @@
 package webui
 
 import (
-	"context"
 	"embed"
 	"encoding/json"
 	"io/fs"
@@ -68,11 +67,7 @@ type memoryView struct {
 	Metadata   map[string]string `json:"metadata"`
 }
 
-func (s *Server) view(ctx context.Context, m *memory.Memory) (memoryView, error) {
-	topics, err := s.svc.Store.TopicsForMemory(ctx, m.ID)
-	if err != nil {
-		return memoryView{}, err
-	}
+func (s *Server) view(m *memory.Memory, topics []memory.Topic) memoryView {
 	names := make([]string, 0, len(topics))
 	for _, t := range topics {
 		names = append(names, t.Name)
@@ -89,7 +84,7 @@ func (s *Server) view(ctx context.Context, m *memory.Memory) (memoryView, error)
 		Topics:     names,
 		CreatedAt:  m.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		Metadata:   m.Metadata,
-	}, nil
+	}
 }
 
 func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request) {
@@ -99,14 +94,18 @@ func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, 500, err.Error())
 		return
 	}
+	ids := make([]string, 0, len(mems))
+	for _, m := range mems {
+		ids = append(ids, m.ID)
+	}
+	topicsByID, err := s.svc.Store.TopicsForMemories(r.Context(), ids)
+	if err != nil {
+		s.writeErr(w, 500, err.Error())
+		return
+	}
 	out := make([]memoryView, 0, len(mems))
 	for _, m := range mems {
-		v, err := s.view(r.Context(), m)
-		if err != nil {
-			s.writeErr(w, 500, err.Error())
-			return
-		}
-		out = append(out, v)
+		out = append(out, s.view(m, topicsByID[m.ID]))
 	}
 	s.writeJSON(w, 200, map[string]any{"memories": out})
 }
@@ -120,19 +119,27 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type entryView struct {
-		Content   string `json:"content"`
-		Type      string `json:"type"`
-		CreatedAt string `json:"created_at"`
-		Source    string `json:"source"`
-		Trust     string `json:"trust"`
-		SessionID string `json:"session_id"`
-		Topics    []string
+		Content   string   `json:"content"`
+		Type      string   `json:"type"`
+		CreatedAt string   `json:"created_at"`
+		Source    string   `json:"source"`
+		Trust     string   `json:"trust"`
+		SessionID string   `json:"session_id"`
+		Topics    []string `json:"topics,omitempty"`
+	}
+	ids := make([]string, 0, len(entries))
+	for _, e := range entries {
+		ids = append(ids, e.Memory.ID)
+	}
+	topicsByID, err := s.svc.Store.TopicsForMemories(r.Context(), ids)
+	if err != nil {
+		s.writeErr(w, 500, err.Error())
+		return
 	}
 	out := make([]entryView, 0, len(entries))
 	for _, e := range entries {
-		topics, _ := s.svc.Store.TopicsForMemory(r.Context(), e.Memory.ID)
-		names := make([]string, 0, len(topics))
-		for _, t := range topics {
+		names := make([]string, 0, len(topicsByID[e.Memory.ID]))
+		for _, t := range topicsByID[e.Memory.ID] {
 			names = append(names, t.Name)
 		}
 		out = append(out, entryView{
@@ -190,6 +197,10 @@ func (s *Server) handleResolveConflict(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.svc.ResolveConflict(r.Context(), id, body.Winner); err != nil {
+		if err == memory.ErrNotFound {
+			s.writeErr(w, 404, err.Error())
+			return
+		}
 		s.writeErr(w, 500, err.Error())
 		return
 	}
@@ -199,6 +210,10 @@ func (s *Server) handleResolveConflict(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteMemory(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := s.svc.Forget(r.Context(), id); err != nil {
+		if err == memory.ErrNotFound {
+			s.writeErr(w, 404, err.Error())
+			return
+		}
 		s.writeErr(w, 500, err.Error())
 		return
 	}

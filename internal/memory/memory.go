@@ -190,6 +190,9 @@ type Store interface {
 	AssignTopic(ctx context.Context, memoryID, topicID string) error
 	TopicsForMemory(ctx context.Context, memoryID string) ([]Topic, error)
 	MemoriesByTopic(ctx context.Context, topicName, project string) ([]*Memory, error)
+	// TopicsForMemories returns topic labels keyed by memory id, in one query.
+	// Avoids N+1 lookups in list/timeline paths.
+	TopicsForMemories(ctx context.Context, memoryIDs []string) (map[string][]Topic, error)
 
 	Close() error
 }

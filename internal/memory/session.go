@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -74,8 +75,8 @@ func (s *Service) CurrentSessionID() string {
 	return cur.ID
 }
 
-// Timeline returns the memories about a topic (or matching a free-form query
-// when topic is empty) across sessions, oldest first, with session context.
+// Timeline returns the memories about a topic (or all project memories when
+// topic is empty) across sessions, oldest first, with session context.
 func (s *Service) Timeline(ctx context.Context, project, topic string, limit int) ([]TimelineEntry, error) {
 	if limit <= 0 {
 		limit = 50
@@ -85,26 +86,26 @@ func (s *Service) Timeline(ctx context.Context, project, topic string, limit int
 	if topic != "" {
 		mems, err = s.Store.MemoriesByTopic(ctx, topic, project)
 	} else {
-		// No topic: fall back to everything in the project, newest first, then
-		// reverse so the timeline reads oldest -> newest.
 		all, _, err2 := s.Store.All(ctx, project)
 		if err2 != nil {
 			return nil, err2
 		}
-		for _, m := range all {
-			mems = append(mems, m)
-		}
-		for i, j := 0, len(mems)-1; i < j; i, j = i+1, j-1 {
-			mems[i], mems[j] = mems[j], mems[i]
-		}
+		mems = all
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	// Sort by created_at ascending for a real timeline.
-	// SQL already orders by created_at for the topic path; the no-topic path
-	// is reversed above. Both are ascending now.
+	// Sort by created_at ascending so the timeline reads oldest -> newest.
+	// Stable + ID tiebreaker keeps order deterministic even when two
+	// memories share a timestamp.
+	sort.SliceStable(mems, func(i, j int) bool {
+		if !mems[i].CreatedAt.Equal(mems[j].CreatedAt) {
+			return mems[i].CreatedAt.Before(mems[j].CreatedAt)
+		}
+		return mems[i].ID < mems[j].ID
+	})
+
 	sessions := map[string]*Session{}
 	out := make([]TimelineEntry, 0, len(mems))
 	for _, m := range mems {
