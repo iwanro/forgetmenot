@@ -483,3 +483,8 @@ Agent: ⚠ Conflict detectat: "DB Postgres 16" vs "DB SQLite (teste locale)".
 - [x] `session end` fără sesiune activă = exit 0 (hook-ul Stop rămâne verde).
 - [x] Mesaje: summarize menționează anthropic.
 - [x] Verificat: XSS escapad în webui, `go test -race` curat, SQL parameterizat, 108 teste.
+
+### v0.5.4 - Build automat CI (2026-08-11)
+- [x] Job `build` în CI: cross-compilează binare statice (linux/darwin/windows × amd64/arm64) la fiecare push pe main și la fiecare PR, cu artefacte descărcabile (14 zile).
+- [x] Versiune injectată din `git describe` pentru build-urile de pe main.
+- [x] Verificare static-link pe linux în matrice.

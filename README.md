@@ -151,6 +151,11 @@ make build
 ./bin/forgetmenot -version
 ```
 
+**Automatic builds:** every push to `main` (and every PR) runs tests and
+cross-compiles static binaries for Linux, macOS and Windows (amd64 + arm64).
+Grab the latest from the CI run's artifacts — no need to wait for a tagged
+release.
+
 ### Embeddings
 
 **Default: `auto` (zero configuration).** The server tries local Ollama; if it

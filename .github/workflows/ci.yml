@@ -25,10 +25,55 @@ jobs:
       - name: Test (integration, MCP end-to-end)
         run: go test ./cmd/forgetmenot/ -run TestMCPServerEndToEnd -v
 
-      - name: Build static binary
-        run: make build
+  # Build automat: static binaries for every platform on every push to main
+  # and every PR. Artifacts are downloadable from the workflow run, so the
+  # latest main is always one click away even between tagged releases.
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+            ext: .exe
+          - goos: windows
+            goarch: arm64
+            ext: .exe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Verify binary is static
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache: true
+
+      - name: Build static binary (${{ matrix.goos }}/${{ matrix.goarch }})
         run: |
-          file bin/forgetmenot
-          file bin/forgetmenot | grep -q "statically linked"
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -trimpath -ldflags "-s -w -X main.version=$(git describe --tags --always)" \
+            -o forgetmenot-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/forgetmenot
+
+      - name: Verify binary is statically linked (linux)
+        if: matrix.goos == 'linux'
+        run: |
+          file forgetmenot-${{ matrix.goos }}-${{ matrix.goarch }}
+          file forgetmenot-${{ matrix.goos }}-${{ matrix.goarch }} | grep -q "statically linked"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: forgetmenot-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: forgetmenot-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+          if-no-files-found: error
+          retention-days: 14
